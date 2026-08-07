@@ -926,6 +926,32 @@ final class BoardController: ObservableObject {
             setVoice(false, why: "prompt submitted")
         }
 
+        /*
+         Session ended — drop the entry so the slot becomes reclaimable immediately.
+
+         `.ended` renders as OFF (identical to an unused slot), and leaving the entry
+         in place makes `pickSlot` prefer any other unused key over this one. So a
+         Terminal tab you closed keeps its slot dark while the next session lights up
+         somewhere else — which was the whole "slots crawl right until eviction takes
+         over" behaviour that the reclaim path was supposed to prevent, but only
+         gets to prevent once *all* slots are occupied.
+
+         Dropping releases the slot at ordering 1 in `pickSlot` (unused wins), so the
+         next new session lands here rather than somewhere new. `SessionTitle.forget`
+         drops the cached transcript name too, or the reused slot would carry the
+         old chat's title until the next enrich.
+         */
+        if state == .ended {
+            if let entry = registry.entry(forSession: sessionID) {
+                SessionTitle.forget(transcriptPath: entry.transcriptPath)
+                registry.release(sessionID: sessionID)
+                Log.write("hook \(event.name): released slot \(entry.slot) (\(sessionID.prefix(8)))")
+                publish()
+                await paint()
+            }
+            return
+        }
+
         // Captured before anything mutates the registry: a lap fires on a *transition*,
         // never on a repaint. Reading it afterwards would compare a state to itself and
         // either fire on every hook or never fire at all.
@@ -948,7 +974,14 @@ final class BoardController: ObservableObject {
          */
         // A discovered host holding a placeholder hands its slot over here, rather
         // than the session taking a second key and the board showing it twice.
+        //
+        // CLAUDE_PID first, because if Claude Code ever exports it that is
+        // canonical. Fall back to walking up from the hook helper's parent — its
+        // ppid is a shell or claude itself, and the claude ancestor's pid is what
+        // Terminal's per-tab tty match needs. Without this fallback, every hook
+        // arrives with pid=nil and every "jump to slot N" reports noWindow.
         let hookPID = event.environment["CLAUDE_PID"].flatMap(Int.init)
+            ?? event.hookPPID.flatMap(Self.claudePID(fromAncestryOf:))
         if registry.adoptRealSessionID(
             sessionID,
             pid: hookPID,
@@ -1085,6 +1118,29 @@ final class BoardController: ObservableObject {
 
     /// The tty of a live process, so a key can raise the right tab later. Captured at
     /// claim time because `ps` cannot resolve one for a dead pid.
+    /**
+     Walk up from a pid until finding a `claude` process.
+
+     Hooks run as children of the shell or of `claude` itself, so the ppid we get
+     from the payload is one or two hops away from the session process. `ps -o
+     comm=` on each ancestor tells us where in the chain the real `claude` sits.
+
+     Bounded by depth: cyclic process tables are a `ps` bug, not a real state, but
+     an unbounded loop here would freeze the hook path.
+     */
+    static func claudePID(fromAncestryOf pid: Int) -> Int? {
+        var current = pid
+        for _ in 0..<8 {
+            guard let info = ProcessAncestry.defaultParentOf(current) else { return nil }
+            // info.path is *current's* command, per `ps -o ppid=,comm=`.
+            let comm = info.path.split(separator: "/").last.map(String.init) ?? info.path
+            if comm == "claude" { return current }
+            guard info.parent > 1 else { return nil }
+            current = info.parent
+        }
+        return nil
+    }
+
     private static func tty(forPID pid: Int) -> String? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/ps")

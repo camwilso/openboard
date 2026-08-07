@@ -40,6 +40,12 @@ public actor HookServer {
         /// Which agent sent this, named by the hook command. Nil means Claude Code —
         /// every settings.json written before harnesses existed omits it.
         public let harness: String?
+        /// The pid of the process that spawned the hook helper — its parent, so
+        /// usually a shell (`sh -c "openboard-hook …"`) or the `claude` binary
+        /// itself. The app walks up from here to find the `claude` ancestor's
+        /// pid + tty, which is the only reliable way to jump-to-slot on a
+        /// running-but-adopted session. Claude Code does not export CLAUDE_PID.
+        public let hookPPID: Int?
         /**
          The original payload, kept as bytes.
 
@@ -73,6 +79,12 @@ public actor HookServer {
             // Notification subtype: permission_prompt, idle_prompt, and friends.
             self.matcher = (raw["matcher"] as? String) ?? (raw["notification_type"] as? String)
             self.harness = raw["harness"] as? String
+            // JSONSerialization gives back NSNumber for numeric JSON — try both int
+            // and string forms so a future change to how the helper serialises it
+            // does not silently blank this field.
+            self.hookPPID = (raw["hook_ppid"] as? Int)
+                ?? (raw["hook_ppid"] as? NSNumber)?.intValue
+                ?? (raw["hook_ppid"] as? String).flatMap(Int.init)
         }
 
         /// The subset eligibility cares about.

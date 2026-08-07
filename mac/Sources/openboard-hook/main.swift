@@ -60,6 +60,13 @@ object["env"] = wanted.reduce(into: [String: String]()) { result, key in
 }
 object["entrypoint"] = environment["CLAUDE_CODE_ENTRYPOINT"]
 
+// The parent process — usually the shell that ran this hook, or claude itself if
+// hooks are spawned without a wrapper. The app walks up from here to find the
+// running `claude` process's PID and its tty, which is what "jump to slot" needs
+// to raise the right Terminal tab. Claude Code does not export CLAUDE_PID as of
+// 2026-08, so this is the reliable path.
+object["hook_ppid"] = Int(getppid())
+
 /*
  Which agent this hook belongs to.
 
