@@ -11,18 +11,18 @@ set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 
 "$ROOT/tools/build-app.sh" --force --install >/dev/null
-: > "$HOME/.claude/openboard/app.log" 2>/dev/null || true
+: > "$HOME/Library/Logs/OpenBoard/app.log" 2>/dev/null || true
 open -a /Applications/OpenBoard.app
 sleep 4
 
 printf 'reloaded — '
-if grep -q "device open: yes" "$HOME/.claude/openboard/app.log" 2>/dev/null; then
+if grep -q "device open: yes" "$HOME/Library/Logs/OpenBoard/app.log" 2>/dev/null; then
   printf 'pad connected\n'
 else
   printf 'pad NOT connected:\n'
-  grep -E "device|paint" "$HOME/.claude/openboard/app.log" 2>/dev/null | tail -3
+  grep -E "device|paint" "$HOME/Library/Logs/OpenBoard/app.log" 2>/dev/null | tail -3
 fi
 
 if [ "${1:-}" = "--log" ]; then
-  tail -f "$HOME/.claude/openboard/app.log"
+  tail -f "$HOME/Library/Logs/OpenBoard/app.log"
 fi

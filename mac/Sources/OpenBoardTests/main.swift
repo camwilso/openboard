@@ -61,6 +61,7 @@ runTurnStateTests()
 runToolProgressTests()
 runPermissionCoverageTests()
 runPermissionStatusTests()
+runClaudeVoiceTests()
 
 // The settings window itself.
 runSelectionColorTests()

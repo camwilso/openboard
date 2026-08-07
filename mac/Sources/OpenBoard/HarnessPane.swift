@@ -100,6 +100,12 @@ struct HarnessPane: View {
                 eventsSection
 
                 if harness.id == Harness.claudeCode.id {
+                    // Claude Code's voice-mode setting and any action-key binding must
+                    // agree, or the pad tap silently records nothing (hold mode) or
+                    // sticks Space down forever (tap mode with voice-talk).
+                    PaneHeader("Voice", "Whether the pad's voice key matches Claude's mode.")
+                    voiceSection
+
                     // Notification subtypes are Claude Code's alone. Showing this table
                     // under Hermes would be four pickers editing settings its events
                     // never consult.
@@ -378,6 +384,94 @@ struct HarnessPane: View {
         .padding(.vertical, 2)
         .background(.quaternary.opacity(0.3), in: .rect(cornerRadius: 10))
         .overlay(alignment: .bottom) { EmptyView() }
+    }
+
+    // MARK: - voice
+
+    /**
+     Claude Code's voice mode and the pad's voice bindings must line up. `hold` records
+     while Space is held; `tap` records between two Space taps. A `voice-tap` binding
+     sends one tap — perfect for `tap`, silent under `hold` since Space never stayed
+     down. `voice-talk` presses Space on key-down and releases on key-up — right for
+     `hold`, and under `tap` it starts a recording that never ends.
+
+     Read `~/.claude/settings.json → voice.mode` and compare against every ACT key
+     bound to a `voice-*` action. Report matches in green, mismatches in orange with
+     the specific rebind the user needs to do.
+     */
+    private var voiceSection: some View {
+        let bindings = voiceBindings()
+        let claudeMode = ClaudeVoice.readMode()
+        return VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Text("Claude's mode")
+                    .font(.system(size: 11.5))
+                    .frame(width: 150, alignment: .leading)
+                Text(claudeMode ?? "not set")
+                    .font(.system(size: 11.5).monospaced())
+                    .foregroundStyle(claudeMode == nil ? .tertiary : .primary)
+                Spacer(minLength: 0)
+                Text("~/.claude/settings.json")
+                    .font(.system(size: 10.5).monospaced())
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.vertical, 8)
+            Divider().opacity(0.3)
+            if bindings.isEmpty {
+                HStack(spacing: 10) {
+                    Text("Pad bindings")
+                        .font(.system(size: 11.5))
+                        .frame(width: 150, alignment: .leading)
+                    Text("no key bound to a voice action")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                }
+                .padding(.vertical, 8)
+            } else {
+                ForEach(Array(bindings.enumerated()), id: \.element.key) { index, binding in
+                    if index > 0 { Divider().opacity(0.3) }
+                    voiceRow(key: binding.key, action: binding.action, claudeMode: claudeMode)
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .background(.quaternary.opacity(0.3), in: .rect(cornerRadius: 10))
+    }
+
+    private func voiceRow(key: String, action: KeyAction, claudeMode: String?) -> some View {
+        let verdict = VoiceMatch.evaluate(action: action, claudeMode: claudeMode)
+        return HStack(spacing: 10) {
+            Circle()
+                .fill(verdict.isMatch ? Color(RGB(0x09B821)) : Color(RGB(0xFF6A00)))
+                .frame(width: 8, height: 8)
+            Text(key)
+                .font(.system(size: 11.5).monospaced())
+                .frame(width: 60, alignment: .leading)
+            Text(action.rawValue)
+                .font(.system(size: 11.5).monospaced())
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 8)
+            Text(verdict.detail)
+                .font(.system(size: 11))
+                .foregroundStyle(verdict.isMatch ? .secondary : Color(RGB(0xFF6A00)))
+                .fixedSize(horizontal: false, vertical: true)
+                .multilineTextAlignment(.trailing)
+        }
+        .padding(.vertical, 8)
+    }
+
+    /// Every action-key binding whose action is one of the voice variants, sorted for
+    /// stable display.
+    private func voiceBindings() -> [(key: String, action: KeyAction)] {
+        board.preferences.actionKeys
+            .compactMap { key, action -> (String, KeyAction)? in
+                guard let action, [.voiceTap, .voiceTalk, .voiceToggle].contains(action) else {
+                    return nil
+                }
+                return (key, action)
+            }
+            .sorted { $0.0 < $1.0 }
     }
 
     // MARK: - surfaces
