@@ -1,0 +1,497 @@
+import OpenBoardKit
+import SwiftUI
+
+/**
+ Device — connection, permissions, calibration, and what is deliberately inert.
+
+ The permissions section is the important one. Several families, granted separately and
+ independently — Input Monitoring and Bluetooth are both "talking to the pad" and having
+ one says nothing about the other. Each produces a differently-shaped silent failure,
+ and the app cannot fix any of them, so the least it can do is say precisely which is
+ missing and open the right pane.
+ */
+struct DevicePane: View {
+    @EnvironmentObject private var board: BoardModel
+    @Environment(\.boardCommands) private var commands
+
+    @State private var permissions = PermissionProbe.inspect()
+    @State private var hooks = HookInstall.Audit(statuses: [:], settingsExists: false)
+    @State private var calibrating = false
+    @State private var hookNote: String?
+    @State private var loginStatus = LoginItem.status
+    @State private var loginError: String?
+    @State private var allGranted = false
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(spacing: 10) {
+                    Circle()
+                        .fill(board.device.isUsable ? Color(RGB(0x09B821)) : Color(RGB(0xD41145)))
+                        .frame(width: 9, height: 9)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(board.device.headline(board.deviceName)).font(.system(size: 13, weight: .semibold))
+                        Text(board.device.message)
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(12)
+                .background(.quaternary.opacity(0.35), in: .rect(cornerRadius: 10))
+
+                // Kept: someone grants a permission, comes back, sees no change, and
+                // concludes the app is broken.
+                PaneHeader("Permissions", "Each takes effect after OpenBoard restarts.")
+                VStack(spacing: 0) {
+                    permissionRow(
+                        "Input Monitoring", "reading the pad — all lighting and every key",
+                        status: permissions.inputMonitoring, pane: "Privacy_ListenEvent"
+                    )
+                    permissionRow(
+                        "Accessibility", "typing snippets, sending ⏎ and ⎋, scrolling",
+                        status: permissions.accessibility, pane: "Privacy_Accessibility"
+                    )
+                    // Separate from Input Monitoring, even though both are "talking to
+                    // the pad": the battery is read as a Bluetooth central, and macOS
+                    // gates that on its own.
+                    permissionRow(
+                        "Bluetooth", "reading the pad's battery level",
+                        status: permissions.bluetooth, pane: "Privacy_Bluetooth"
+                    )
+                    ForEach(PermissionProbe.automationTargets, id: \.bundleID) { target in
+                        permissionRow(
+                            "Automation → \(target.name)", why(automating: target.name),
+                            status: permissions.automation[target.name] ?? .unknown,
+                            pane: "Privacy_Automation",
+                            subject: target.name
+                        )
+                    }
+                }
+                HStack(spacing: 8) {
+                    /*
+                     The button worked and looked like it did not.
+
+                     Re-probing is instant and usually finds exactly what was already on
+                     screen, so pressing it changed nothing visible — and a button that
+                     appears to do nothing is indistinguishable from one that is broken.
+                     It is pressed precisely when someone has just granted something in
+                     System Settings and wants to be told, so now it answers out loud.
+
+                     Only on success. A failure already has an answer on screen: the row
+                     that is not green, and the list beside this button.
+                     */
+                    Button("Check now") {
+                        permissions = PermissionProbe.inspect()
+                        allGranted = permissions.missing.isEmpty
+                    }
+                    .controlSize(.small)
+
+                    if !permissions.missing.isEmpty {
+                        Text("Missing: \(permissions.missing.joined(separator: ", "))")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color(RGB(0xFF6A00)))
+                    }
+                }
+
+                /*
+                 Key order and Hooks are gone from this pane.
+
+                 Both were one-time setup wearing the clothes of a setting. The key order
+                 is the layout every pad reports and is now assumed rather than gated on;
+                 the hooks are wired once and then never thought about again. A settings
+                 window is for things you change, and a permanent readout of two answered
+                 questions is furniture.
+
+                 Neither check went away — see `refresh()`. The audit still runs at
+                 launch and writes its verdict to the log, which is where a *broken*
+                 install has always been diagnosed from. What is gone is the ability to
+                 repair either from the UI; the README documents both by hand.
+                */
+                HStack(spacing: 8) {
+                    Button("Keys off") { commands.keysOff() }
+                        .controlSize(.small)
+                        .disabled(!board.device.isUsable)
+                        .help("Blank the six keys — the quickest way to tell "
+                            + "\"not writing\" apart from \"not listening\".")
+                    // The section is gone, the escape hatch is not. A pad whose keys
+                    // are in a different order has no other way to be fixed, and
+                    // deleting the button would leave the capture sheet as code nothing
+                    // calls — which is how four separate bugs got into this app.
+                    Button(board.isCalibrationConfirmed ? "Recalibrate…" : "Check key order…") {
+                        calibrating = true
+                    }
+                        .controlSize(.small)
+                        .disabled(!board.device.isUsable)
+                    if !board.device.isUsable {
+                        Text("Connect the pad first.")
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
+                }
+
+                // Hooks have no section either, but a *broken* install still has to be
+                // fixable: without them the app runs, the pad connects, and nothing ever
+                // lights. So this appears only when the audit finds a problem, and is
+                // absent entirely on a healthy machine — an error, not a readout.
+                if !hooks.isHealthy {
+                    hooksProblem
+                }
+
+                PaneHeader("Starting up", "Whether OpenBoard runs without being asked.")
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle(isOn: loginItemBinding) {
+                        Text("Open OpenBoard at login").font(.system(size: 12.5))
+                    }
+                    .toggleStyle(.switch)
+                    .disabled(!LoginItem.isInstalledProperly)
+
+                    if !LoginItem.isInstalledProperly {
+                        // Registration is tied to the bundle path, so a copy running
+                        // from a build directory registers a path that will vanish.
+                        Text("Move OpenBoard to /Applications first — a login item "
+                            + "registered from anywhere else breaks when that folder changes.")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(Color(RGB(0xFF6A00)))
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else if loginStatus == .awaitingApproval {
+                        Text("Waiting for approval in System Settings → General → Login Items.")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(Color(RGB(0xFF6A00)))
+                    } else if case let .unavailable(reason) = loginStatus {
+                        Text(reason)
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(Color(RGB(0xFF6A00)))
+                    }
+                    if let loginError {
+                        Text(loginError).font(.system(size: 11.5))
+                            .foregroundStyle(Color(RGB(0xD41145)))
+                    }
+                }
+
+                PaneHeader("Files", "Where your settings and log are kept.")
+                configFileSection
+            }
+            .padding(22)
+        }
+        // Re-probed on appearance because these are granted *outside* the app: someone
+        // flips a switch in System Settings and comes straight back here, and a stale
+        // red would send them round the loop again.
+        .onAppear { refresh() }
+        .sheet(isPresented: $calibrating) { CalibrationSheet() }
+        // Everything, not just what lighting and keys need: someone checking after a
+        // trip to System Settings wants to know the whole list is clear. A target that
+        // is merely not running does not count against it — see PermissionProbe.Status.
+        .alert("All permissions granted", isPresented: $allGranted) {
+            Button("OK", role: .cancel) {}
+        }
+    }
+
+    /**
+     Where the settings live, read from the store rather than written down.
+
+     A hardcoded path is a caption that can be wrong: `OPENBOARD_HOME` moves the whole
+     state directory, and a label claiming otherwise sends someone to edit a file the
+     app is not reading.
+
+     Two rows, because state and logs are deliberately in different places: logs live
+     where Console.app looks, and can be thrown away without losing a setting.
+     */
+    private var configFileSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            fileRow("Settings", url: PreferencesStore.url())
+            fileRow("Log", url: Log.url)
+            versionRow
+            // Kept: it names capabilities that exist nowhere else in the UI.
+            Text("Safe to hand-edit. Holds a few settings this window does not show.")
+            .font(.system(size: 11.5))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /**
+     Which build this is.
+
+     There is no auto-update and no About window, so without this the only way to answer
+     "what version are you on?" is to inspect the bundle's Info.plist from a terminal —
+     which is a poor first question to ask someone reporting a bug.
+
+     Selectable, because the point is to paste it into an issue.
+     */
+    private var versionRow: some View {
+        let info = Bundle.main.infoDictionary
+        let short = info?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info?["CFBundleVersion"] as? String ?? "?"
+        return HStack(spacing: 10) {
+            Text("Version")
+                .font(.system(size: 11.5, weight: .medium))
+                .frame(width: 54, alignment: .leading)
+            Text("\(short) (\(build))")
+                .font(.system(size: 11.5).monospaced())
+                .textSelection(.enabled)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 0)
+        }
+    }
+
+    /// One path, shortened to `~` and openable. Disabled rather than hidden when the
+    /// file does not exist yet: the path is still the answer to "where would it be?".
+    private func fileRow(_ label: String, url: URL) -> some View {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let shown = url.path.hasPrefix(home) ? "~" + url.path.dropFirst(home.count) : url.path
+        return HStack(spacing: 10) {
+            Text(label)
+                .font(.system(size: 11.5, weight: .medium))
+                .frame(width: 54, alignment: .leading)
+            Text(shown)
+                .font(.system(size: 11.5).monospaced())
+                .textSelection(.enabled)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 0)
+            Button("Reveal") {
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+            }
+            .controlSize(.small)
+            .disabled(!FileManager.default.fileExists(atPath: url.path))
+        }
+    }
+
+    private var loginItemBinding: Binding<Bool> {
+        Binding(
+            get: { loginStatus.isOn },
+            set: { wanted in
+                switch LoginItem.set(wanted) {
+                case let .success(status):
+                    loginStatus = status
+                    loginError = nil
+                case let .failure(error):
+                    loginError = error.localizedDescription
+                    loginStatus = LoginItem.status
+                }
+            }
+        )
+    }
+
+    private func refresh() {
+        permissions = PermissionProbe.inspect()
+        // Read live rather than remembered: the registration is tied to the bundle
+        // path and signature, so it can go stale exactly like a hook path can.
+        loginStatus = LoginItem.status
+        hooks = HookInstall.audit(
+            settings: HookInstall.loadSettings(),
+            expectedCommand: HookInstall.hookCommandPath()
+        )
+    }
+
+    /**
+     Only ever shown when something is wrong.
+
+     Writing to `~/.claude/settings.json` changes behaviour for every Claude Code
+     session on the machine, so it never happens on launch — only on this press, and the
+     current file is backed up beside itself first.
+     */
+    @ViewBuilder
+    private var hooksProblem: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Circle().fill(Color(RGB(0xFF6A00))).frame(width: 9, height: 9)
+                Text(hooks.settingsExists
+                    ? "\(hooks.problems.count) of \(HookInstall.events.count) hooks need attention."
+                    : "No ~/.claude/settings.json found.")
+                    .font(.system(size: 12))
+                Spacer(minLength: 0)
+                Button("Repair hooks") {
+                    do {
+                        try HookInstall.install(command: HookInstall.hookCommandPath())
+                        hookNote = "Wired. A backup of the previous file is beside it."
+                    } catch {
+                        hookNote = error.localizedDescription
+                    }
+                    refresh()
+                }
+                .controlSize(.small)
+            }
+
+            ForEach(hooks.problems, id: \.self) { event in
+                HStack(spacing: 6) {
+                    Text(event).font(.system(size: 11.5).monospaced())
+                    Text(describe(hooks.statuses[event]))
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+            }
+
+            if let hookNote {
+                Text(hookNote).font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+        }
+        .padding(12)
+        .background(.quaternary.opacity(0.35), in: .rect(cornerRadius: 10))
+    }
+
+    private func describe(_ status: HookInstall.EventStatus?) -> String {
+        switch status {
+        case .missing, nil: "not wired"
+        case .stalePath(let path): "points at a binary that is gone — \(path)"
+        case .otherPath(let path): "points at another install — \(path)"
+        case .ok: "ok"
+        }
+    }
+
+    /// What each automation target is actually for. All three said "jumping to a chat",
+    /// which is true of one of them: System Events types every snippet and sends every
+    /// ⏎, and QuickTime only ever plays the countdown.
+    private func why(automating target: String) -> String {
+        switch target {
+        case "System Events": "typing snippets, ⏎ and ⎋, arrow keys"
+        case "Terminal": "jumping to a chat"
+        case "QuickTime Player": "playing the countdown video"
+        default: "driving \(target)"
+        }
+    }
+
+    private func permissionRow(
+        _ name: String, _ why: String,
+        status: PermissionProbe.Status, pane: String,
+        subject: String? = nil
+    ) -> some View {
+        HStack(spacing: 10) {
+            Circle()
+                .fill(color(for: status))
+                .frame(width: 8, height: 8)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(name).font(.system(size: 12.5, weight: .medium))
+                Text(why).font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            Text(label(for: status))
+                .font(.system(size: 11).monospaced())
+                .foregroundStyle(.secondary)
+                .help(hint(for: status, name: subject ?? name) ?? "")
+            Button("Open") {
+                if let url = PermissionProbe.settingsURL(forPane: pane) {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+            .controlSize(.small)
+        }
+        .padding(.vertical, 8)
+        .overlay(alignment: .bottom) { Divider().opacity(0.35) }
+    }
+
+    private func color(for status: PermissionProbe.Status) -> Color {
+        switch status {
+        case .granted: Color(RGB(0x09B821))
+        case .denied: Color(RGB(0xD41145))
+        // Not the same as denied: nobody has been asked yet. Sending someone to a
+        // settings pane where the app is not even listed is worse than saying so.
+        case .unknown: Color(RGB(0xFF6A00))
+        // Nothing is wrong and there is nothing to do, so it must not look like an
+        // alert. This was orange, which read as "you are missing a permission" for a
+        // grant the user had already given.
+        case .unavailable: Color.secondary.opacity(0.5)
+        }
+    }
+
+    private func label(for status: PermissionProbe.Status) -> String {
+        switch status {
+        case .granted: "granted"
+        case .denied: "denied"
+        case .unknown: "not asked"
+        // Deliberately describes the *target*, not the permission: the permission is
+        // very likely granted and simply cannot be read while the app is asleep.
+        case .unavailable: "not running"
+        }
+    }
+
+    /// Only where it is not obvious. A row that explains itself does not need a tooltip.
+    private func hint(for status: PermissionProbe.Status, name: String) -> String? {
+        guard status == .unavailable else { return nil }
+        return "\(name) is not running, so macOS cannot be asked whether OpenBoard may "
+            + "drive it. It starts on demand — use a key that needs it and this resolves "
+            + "itself."
+    }
+
+}
+
+struct ShowCard: View {
+    let show: Show
+    let running: Bool
+    let play: () -> Void
+
+    var body: some View {
+        Button(action: play) {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 8) {
+                    if show.auto {
+                        Circle().fill(tint).frame(width: 8, height: 8)
+                    }
+                    Text(show.label).font(.system(size: 13, weight: .semibold))
+                    Spacer(minLength: 0)
+                    if running {
+                        ProgressView().controlSize(.small)
+                    }
+                }
+                Text(show.description)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(String(format: "%.1fs", show.duration.seconds))
+                    .font(.system(size: 10.5).monospaced())
+                    .foregroundStyle(.tertiary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            // Interactive, because it is a button: the material has to react to a press
+            // rather than sit there as a texture.
+            .glassControl(cornerRadius: 10)
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Auto-fire shows borrow the color of the state they announce.
+    private var tint: Color {
+        switch show.name {
+        case "completion": Color(RGB(0x09B821))
+        case "question": Color(RGB(0xFF6A00))
+        case "error": Color(RGB(0xD41145))
+        default: .secondary
+        }
+    }
+}
+
+/**
+ A section heading and one line under it.
+
+ Every section carries one. The line is still held to a standard: it says something the
+ title does not, in one sentence, and never restates it in longer words. "Permissions —
+ each takes effect after OpenBoard restarts" earns its place; "Permissions — the
+ permissions OpenBoard needs" would not.
+
+ The subtitle stays optional in the type rather than required, so a section that
+ genuinely has nothing to add is not forced to invent something.
+ */
+struct PaneHeader: View {
+    let title: String
+    let subtitle: String?
+
+    init(_ title: String, _ subtitle: String? = nil) {
+        self.title = title
+        self.subtitle = subtitle
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title).font(.system(size: 15, weight: .semibold))
+            if let subtitle {
+                Text(subtitle)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}

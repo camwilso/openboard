@@ -1,0 +1,31 @@
+node_modules/
+.DS_Store
+
+# Runtime state never belongs in the repo — it lives under
+# ~/Library/Application Support/OpenBoard/ and ~/Library/Logs/OpenBoard/ (see AppPaths).
+registry.json
+calibration.json
+probe.jsonl
+*.tmp
+
+# Fun mode media: the video is 87MB and not ours to redistribute; the WAV is derived
+# from it. analysis.json IS committed — it is small, and regenerating it needs the video.
+the-final-countdown/*.mp4
+the-final-countdown/*.m4v
+the-final-countdown/*.mov
+the-final-countdown/*.wav
+
+# Swift build output and the assembled bundle — rebuild with mac/tools/build-app.sh
+mac/.build/
+mac/dist/
+
+# Working notes. Kept locally rather than published: they are a record of what was
+# tried on this hardware, not documentation anybody should have to read.
+docs/
+
+# The asset generators and their inputs. Their output is committed, and neither can be
+# run by anyone else: one reads a private design repo, the other reads CodexBar.app.
+# A tools folder should hold the tools its readers can use.
+mac/tools/generate-keycaps.js
+mac/tools/generate-provider-icons.js
+mac/tools/marks/
