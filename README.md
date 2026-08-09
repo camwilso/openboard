@@ -179,7 +179,8 @@ The video is not included — it is ~90MB and not mine to redistribute — but t
 is. Supply your own `.mp4` of **Europe – The Final Countdown** and the show works with no
 further setup:
 
-<!-- VIDEO-LINK: paste the URL of the upload analysis.json was built from -->
+The grid was built from [this upload](https://www.youtube.com/watch?v=9jK-NcRmVcw).
+Save it as an `.mp4`, then:
 
 ```sh
 open ~/Library/Application\ Support/OpenBoard/Media/the-final-countdown/
