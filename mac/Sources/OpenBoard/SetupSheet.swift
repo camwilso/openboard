@@ -57,6 +57,33 @@ struct SetupSheet: View {
         // already fixed.
         .onAppear(perform: refresh)
         .sheet(isPresented: $calibrating, onDismiss: refresh) { CalibrationSheet() }
+        /*
+         The one moment worth marking.
+
+         Everything until now has been obligations — permissions the app needs, a file
+         it has to edit, an order it has to confirm. None of it was a choice. What comes
+         next is the first part that is: what each key does and what it looks like. So
+         the finish is also a handoff, and it names the next thing rather than leaving
+         someone in a window whose work is done.
+
+         Fires once ever, tracked by a marker in the state directory. A congratulation
+         that reappears is not a congratulation.
+        */
+        .alert("OpenBoard is set up", isPresented: $setup.justCompleted) {
+            Button("Map your keys") {
+                setup.markCompletionSeen()
+                dismiss()
+                commands.openSettings()
+            }
+            Button("Later", role: .cancel) {
+                setup.markCompletionSeen()
+                dismiss()
+            }
+        } message: {
+            Text("The pad is live and your sessions will report to it. "
+                 + "Next: choose what each key does and how it looks — that part is "
+                 + "entirely yours.")
+        }
     }
 
     // MARK: header
