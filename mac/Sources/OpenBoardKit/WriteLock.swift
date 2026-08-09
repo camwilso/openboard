@@ -57,7 +57,16 @@ public actor HIDWriteLock {
     /// - Parameter timeout: how long to wait for another writer. Upstream defaults to
     ///   20s; a status light is best-effort and must never block a session, so
     ///   callers pass something far shorter.
-    public func withLock<T>(
+    ///
+    /// `T: Sendable` because this is an actor: `body` runs outside its isolation and
+    /// its result crosses back in. Every caller returns `Void` or `Bool`, so the
+    /// constraint costs nothing and states what was always true.
+    ///
+    /// Without it the compiler's tolerance decides whether this builds. Swift 6.3
+    /// accepts it under region-based isolation; the toolchain on GitHub's macos-15
+    /// runner rejects it outright — which is how a file nobody had touched in weeks
+    /// became the first thing CI ever failed on.
+    public func withLock<T: Sendable>(
         timeout: TimeInterval = 2.0,
         _ body: () async throws -> T
     ) async throws -> T {

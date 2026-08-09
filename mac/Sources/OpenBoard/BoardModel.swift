@@ -150,6 +150,11 @@ struct SlotView: Identifiable, Equatable {
     var pendingTool: String?
     /// Terminal, VS Code, or a CLI with no tty.
     var origin: SessionOrigin?
+    /// The raw entry point, kept alongside `origin` because the two answer different
+    /// questions. `origin` is `.vscode` for both an extension-hosted chat and a session
+    /// in VS Code's integrated terminal; only the first has a panel that can be revealed
+    /// by session id, and asking for one that does not exist *creates* it.
+    var entrypoint: String?
     /// Whether `title` is the session's own name or a fallback to its folder.
     var isNamed: Bool = false
     /// The real working directory. `project` is its *display* form with the home

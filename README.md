@@ -125,32 +125,28 @@ Or download `OpenBoard-<version>.zip` from
 [Releases](https://github.com/camwilso/openboard/releases), unzip, and drag it to
 `/Applications`. It is signed and notarized, so it opens without a Gatekeeper detour.
 
-Then, in the app:
+Open it — it lives in the menu bar with no Dock icon — and click **Start setup**. That
+walks the five things OpenBoard needs, and until they are done the popover shows what is
+left rather than a board that cannot paint:
 
-1. **Open it.** It lives in the menu bar with no Dock icon.
-2. **Grant permissions**, in Settings → Device. Each is per-application and only takes
-   effect after the app restarts:
-   - **Input Monitoring** — reading the pad, so every light and every key
-   - **Accessibility** — typing snippets, sending ⏎ and ⎋, scrolling
-   - **Automation** → Terminal for jumping to a chat, QuickTime Player for fun mode
-3. **Check the key order** in Settings → Device — optional, and worth ten seconds. The
-   board runs on the layout every pad so far reports (slot 1 top-left, reading order),
-   so it lights immediately. The check paints six colors and asks one question: are they
-   in that order? If your pad disagrees, the same screen lets you map it by hand.
-4. **Wire the hooks**, in Settings → Device. A fresh install has none, so the pane
-   opens with an orange panel saying so and a **Repair hooks** button — there is no
-   Hooks *section* to find, because on a working machine there is nothing to look at.
-   Repairing edits `~/.claude/settings.json`, preserving every unrelated setting and
-   any other tool's hooks on the same events, and backs the file up first.
-5. **Keep the pad on Layer 1.** Per-key status renders only there; Layer 2 allows custom
-   keycodes but never shows status.
+| | |
+|---|---|
+| **Input Monitoring** | reading the pad, so every light and every key |
+| **Accessibility** | typing snippets, sending ⏎ and ⎋, scrolling |
+| **Automation** | driving System Events — granted in place, no trip to System Settings |
+| **Key order** | ten seconds, and worth it: colours and bindings are set per *slot* |
+| **Claude Code hooks** | edits `~/.claude/settings.json`, preserving everything else and backing it up first |
+
+It is a checklist rather than a wizard because Input Monitoring and Accessibility only
+take effect after OpenBoard restarts — a linear flow would be killed by its own first
+step. Stop and come back whenever; it recomputes what is left each time.
+
+Two things it cannot do for you, both on the hardware: pair the Codex Micro with this
+Mac, and **keep it on Layer 1** — per-key status renders only there.
 
 Hooks load at session start, so open a new session to see it work. Sessions already
-running are picked up too — the app walks the process table at launch rather than
-waiting for each one to do something.
-
-Turn on **Open OpenBoard at login** in Settings → Device. A board you have to remember
-to launch is not an ambient board.
+running are picked up too — the app walks the process table at launch — but they will
+not report until they restart, because hooks are read when a session begins.
 
 ### Building it yourself
 
@@ -267,7 +263,12 @@ Clicking a session in the menu-bar popover does the same thing.
 | Surface | How | Precision |
 |---|---|---|
 | Terminal | matches the session's `tty` against Terminal's per-tab `tty` | exact tab |
-| VS Code | `code -r <cwd>` on the session's workspace folder | right window, not the specific panel |
+| VS Code, extension-hosted | `vscode://anthropic.claude-code/open?session=<id>`, which the extension resolves to the panel already holding that conversation | exact tab |
+| VS Code integrated terminal | activates VS Code | right app; the pty is not Terminal's, and no API selects a terminal from outside |
+
+Nothing is ever *opened* by a jump. The extension reveals a panel it already has, and the
+integrated-terminal case raises the app rather than opening the folder — an approximate jump beats
+an unrequested one that rearranges your editor.
 
 **Press the Agent key itself.** They emit vendor keycodes rather than keystrokes, so nothing else
 on the system sees them — no hotkey daemon, no global shortcut, no conflict with anything you have

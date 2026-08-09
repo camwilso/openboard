@@ -1558,6 +1558,7 @@ final class BoardController: ObservableObject {
                 origin: SessionOrigin.from(
                     entrypoint: entry.entrypoint, tty: entry.tty, host: entry.host
                 ),
+                entrypoint: entry.entrypoint,
                 isNamed: name != nil,
                 cwd: entry.cwd,
                 // The same resolution the pad gets, from the same configured colors, so

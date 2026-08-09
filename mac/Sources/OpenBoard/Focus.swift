@@ -43,6 +43,9 @@ enum Focus {
          could not get there. It now asks `origin`, which knows who owns the process.
          */
         if slot.origin == .vscode {
+            if let session = slot.sessionID, slot.entrypoint == "claude-vscode" {
+                return revealVSCodeSession(session)
+            }
             return activateVSCode()
         }
 
@@ -52,6 +55,40 @@ enum Focus {
         }
 
         return .noWindow
+    }
+
+    /**
+     Reveal the tab holding one specific conversation.
+
+     The Claude Code extension registers a URI handler, and `/open?session=` routes
+     through `claude-vscode.primaryEditor.open` to a panel map keyed by session id: an
+     id already on screen is `reveal()`ed rather than reopened. So the exact chat is
+     reachable from outside VS Code, which no public API offers — the extension's own
+     commands are the only thing that knows which panel is which.
+
+     **Only for extension-hosted sessions.** A session in VS Code's integrated terminal
+     is also `origin == .vscode` and has no panel, so this would miss the map and *create*
+     one — a second, resumed view of a conversation that is already running in a terminal
+     three feet away. That is the class of confident wrong answer this file exists to
+     avoid, so the caller gates on the entry point rather than on the origin.
+
+     A closed panel is reopened rather than revealed, which is the same thing the user
+     asked for: the board only lists live sessions, so the conversation is still running.
+
+     Undocumented, and therefore treated like the rest of this app's private
+     dependencies: if the handoff fails, fall back to raising the app rather than
+     leaving the press with nothing to show for it.
+     */
+    private static func revealVSCodeSession(_ sessionID: String) -> Outcome {
+        var components = URLComponents()
+        components.scheme = "vscode"
+        components.host = "anthropic.claude-code"
+        components.path = "/open"
+        components.queryItems = [URLQueryItem(name: "session", value: sessionID)]
+        guard let url = components.url, NSWorkspace.shared.open(url) else {
+            return activateVSCode()
+        }
+        return .raised(method: "vscode-session")
     }
 
     /**
