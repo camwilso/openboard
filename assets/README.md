@@ -1,24 +1,47 @@
 # Screenshots
 
-Four images, referenced by the main README. Retina captures (`⌘⇧4` then `space` for a
-window) at whatever size your display gives — GitHub scales them down, and a 2x capture
-stays sharp when it does.
+Three of these are captured; the fourth needs a camera.
 
-| File | What | How |
+| File | State | What |
 |---|---|---|
-| `hero.png` | The pad on a desk, keys lit, a few different states showing at once | A real photo beats a render. Landscape. |
-| `setup.png` | The setup window part-way through — two or three ticked, the rest not | `⌘⇧4` then `space`, click the window |
-| `popover.png` | The menu bar popover with several live sessions, ideally one *awaiting* | Open it, then `⌘⇧4`+`space` |
-| `settings.png` | Settings → Board, showing what each key does | Same |
+| `popover.png` | done | The menu bar popover — four live sessions, two waiting |
+| `setup.png` | done | Guided setup, three of five complete |
+| `settings.png` | done | Settings → Board, mapping what each key does |
+| `hero.png` | **wanted** | A photo of the pad on a desk, keys lit. Not referenced by the README yet, so nothing breaks without it |
 
-A few things worth doing before you capture:
+## How the three were taken
 
-- **Check the session names.** The popover shows Claude Code's summaries of what you are
-  working on, and these go in a public README. Rename or use a scratch project.
-- **Grab the popover with something interesting on it.** Six idle keys says less about
-  the product than one orange key that means "this one is waiting for you".
-- **Light mode or dark, but the same in all four.** Mixed themes across a README reads as
-  four screenshots of four different apps.
+Not with `⌘⇧4`. A window grabbed with `screencapture -l<id>` has no backdrop, and the
+app's Liquid Glass samples what is behind it — so the popover came out flat grey, which
+is not what anyone sees.
 
-Drop the files in here with those exact names and the README picks them up — the image
-tags are already in place.
+They are screen-region captures with every other app hidden, which gives the glass a real
+desktop to sample. `mac/tools/` has no helper for this; it was a one-off:
+
+```sh
+# window ids and bounds
+swift windows.swift OpenBoard        # CGWindowListCopyWindowInfo
+
+# hide everything else, then
+screencapture -x -R<x,y,w,h> out.png
+```
+
+The setup window was captured by launching with a scratch state directory, which makes it
+a first launch and opens setup by itself:
+
+```sh
+open -a OpenBoard --env OPENBOARD_HOME=/tmp/scratch --env CLAUDE_CONFIG_DIR=/tmp/scratch-claude
+```
+
+## If you retake them
+
+**Check the session names first.** The popover shows Claude Code's own summaries of what
+you are working on, and these go in a public README. The current `popover.png` shows four
+titles, all about this project — worth a look before it ships, and worth using a scratch
+project if any of them name something private.
+
+**Keep the wallpaper quiet.** The glass samples it, so a busy desktop shows through and
+competes with the content.
+
+**Same appearance across all of them.** Mixed light and dark reads as screenshots of
+different apps.

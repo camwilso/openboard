@@ -6,8 +6,10 @@ is blocked waiting on you.
 
 By **Cam Wilson** — [openboardapp.com](https://openboardapp.com) · MIT licensed.
 
-<!-- SCREENSHOT: the pad, lit, on a desk. Landscape, ~1200px wide. assets/hero.png -->
-![The Codex Micro with six Agent keys lit](assets/hero.png)
+<p align="center">
+  <img src="assets/popover.png" width="380"
+       alt="The menu bar popover: four live sessions, two waiting on a permission prompt">
+</p>
 
 > [!NOTE]
 > **Keep the pad on Layer 1.** Per-key status renders only there — writes succeed on
@@ -95,8 +97,10 @@ unzip, and drag it to Applications. It is signed and notarized, so it opens norm
 Open OpenBoard and it walks you through the rest. It has no Dock icon — it lives in the
 menu bar.
 
-<!-- SCREENSHOT: the setup window, part-way through. assets/setup.png -->
-![Guided setup, showing five steps with two complete](assets/setup.png)
+<p align="center">
+  <img src="assets/setup.png" width="520"
+       alt="Guided setup: three of five steps complete">
+</p>
 
 | | |
 |---|---|
@@ -118,9 +122,6 @@ restart.
 
 ## Using it
 
-<!-- SCREENSHOT: the menu bar popover with a few live sessions. assets/popover.png -->
-![The menu bar popover listing six sessions](assets/popover.png)
-
 **Press an Agent key** to jump to that chat. In Terminal it finds the exact tab; in VS
 Code it reveals the panel already holding that conversation. Nothing is ever *opened* by
 a jump — an approximate jump beats an unrequested one that rearranges your editor.
@@ -131,8 +132,10 @@ prompt** rather than sending ⏎ at whatever happens to be there.
 **Press the dial** for the popover, **hold it** for Settings. Every other key is yours to
 bind.
 
-<!-- SCREENSHOT: Settings → Board, showing key bindings. assets/settings.png -->
-![Settings, showing what each key does](assets/settings.png)
+<p align="center">
+  <img src="assets/settings.png" width="760"
+       alt="Settings: mapping what each key on the pad does">
+</p>
 
 ## Updates
 
