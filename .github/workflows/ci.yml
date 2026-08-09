@@ -99,4 +99,18 @@ jobs:
           KEY=$(/usr/libexec/PlistBuddy -c "Print :SUPublicEDKey" "$APP/Contents/Info.plist")
           test -n "$KEY" || { echo "SUPublicEDKey is empty"; exit 1; }
 
+          # The hardened runtime blocks Apple events without this, and blocks them
+          # *silently*: macOS returns errAEEventNotPermitted with no consent dialog, so
+          # Automation can never be granted by anyone and OpenBoard never even appears
+          # in System Settings for having never successfully asked. It shipped that way
+          # and was only found by rehearsing a new install.
+          codesign -d --entitlements - "$APP" 2>/dev/null \
+            | grep -q "com.apple.security.automation.apple-events" \
+            || { echo "missing the apple-events entitlement — Automation cannot be granted"; exit 1; }
+
+          # Recent macOS refuses to show the consent dialog at all without a usage
+          # string, which looks identical to a denial.
+          /usr/libexec/PlistBuddy -c "Print :NSAppleEventsUsageDescription" "$APP/Contents/Info.plist" >/dev/null \
+            || { echo "missing NSAppleEventsUsageDescription"; exit 1; }
+
           echo "bundle verified"

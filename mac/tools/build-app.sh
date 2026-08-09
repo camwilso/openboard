@@ -245,6 +245,10 @@ cat > "$APP/Contents/Info.plist" <<PLIST
        prompted. -->
   <key>NSBluetoothAlwaysUsageDescription</key>
   <string>OpenBoard reads the Codex Micro's battery level.</string>
+  <!-- The sentence macOS puts in the Automation consent dialog. Without it the prompt
+       is refused outright on recent systems, which looks identical to a denial. -->
+  <key>NSAppleEventsUsageDescription</key>
+  <string>OpenBoard drives System Events to type snippets and send keystrokes, Terminal to jump to a chat, and QuickTime Player for fun mode.</string>
   <key>CFBundleIconFile</key>           <string>OpenBoard</string>
 
   <!-- Sparkle.
@@ -327,9 +331,16 @@ else
   fi
 fi
 
+# The hardened runtime blocks Apple events unless the entitlement is present, and
+# blocks them *silently* — errAEEventNotPermitted with no consent dialog, so the
+# permission can never be granted by anyone. See OpenBoard.entitlements.
+ENTITLEMENTS="$ROOT/OpenBoard.entitlements"
+[ -f "$ENTITLEMENTS" ] || { printf 'missing %s\n' "$ENTITLEMENTS" >&2; exit 1; }
+
 sign() {
   # $1 = path, $2 = identifier
   codesign --force --sign "$IDENTITY" --identifier "$2" \
+    --entitlements "$ENTITLEMENTS" \
     --options runtime $TS_FLAG "$1" 2>&1 | grep -v "replacing existing" || true
 }
 

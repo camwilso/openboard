@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    Sending Apple events from this process.
+
+    The app is signed with the hardened runtime, which blocks Apple events outright
+    unless this is present — and the failure is the worst shape available: macOS returns
+    errAEEventNotPermitted *without ever showing the consent dialog*. The permission
+    therefore cannot be granted, from inside the app or from System Settings, because
+    OpenBoard never appears under Automation for having never successfully asked.
+
+    That is not theoretical. Setup's Grant button returned denied instantly, ten times
+    in five seconds, on a machine where the record had just been cleared with
+    `tccutil reset AppleEvents`. Nothing was refused; nothing was ever asked.
+
+    Note this is separate from the automation the app does day to day, which runs
+    through /usr/bin/osascript as a subprocess. osascript carries this entitlement
+    itself, which is why jumping to a chat has always worked and why the gap stayed
+    invisible for so long — every path that used Apple events borrowed someone else's
+    permission to send them.
+  -->
+  <key>com.apple.security.automation.apple-events</key>
+  <true/>
+</dict>
+</plist>
