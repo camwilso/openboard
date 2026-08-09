@@ -148,11 +148,18 @@ struct SettingsWindow: View {
             .toolbar(removing: .sidebarToggle)
         } detail: {
             Group {
+                // Device is deliberately ungated. It is the pane that says which
+                // permission is missing, so blocking it because a permission is missing
+                // would be a locked door with the key behind it.
                 switch selection {
-                case .pane(.board): BoardPane()
-                case .pane(.colors): ColorsPane()
-                case .pane(.device): DevicePane()
-                case let .harness(id): HarnessPane(harnessID: id)
+                case .pane(.board):
+                    BoardPane().requiresSetup("What each key does")
+                case .pane(.colors):
+                    ColorsPane().requiresSetup("How the keys look")
+                case .pane(.device):
+                    DevicePane()
+                case let .harness(id):
+                    HarnessPane(harnessID: id).requiresSetup("How this harness is shown")
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
