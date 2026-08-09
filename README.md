@@ -79,14 +79,17 @@ Laps fire on the state actually changing, never on a repaint — `Notification` 
 
 ## Requirements
 
-- macOS 14 or later
+- macOS 14 or later, Apple Silicon or Intel
 - Work Louder Codex Micro paired with this Mac, over Bluetooth or USB
 - Claude Code
-- Xcode Command Line Tools, to build it — `xcode-select --install`
 
-No runtime dependencies and no network requests. The app talks to the pad through
-IOKit directly, so unlike the Node version it does not need ChatGPT.app or Work Louder
-Input installed to borrow a native HID binding from.
+No runtime dependencies. The app talks to the pad through IOKit directly, so unlike the
+Node version it does not need ChatGPT.app or Work Louder Input installed to borrow a
+native HID binding from.
+
+The only network request it ever makes is the update check, against
+[the appcast](https://updates.openboardapp.com/appcast.xml) — nothing about your sessions leaves
+the machine, and the check can be turned off in Settings.
 
 **Why it stays running.** The protocol offers no lighting readback and Codex reclaims
 the LEDs on its own schedule, so a one-shot write is correct only at the instant it
@@ -114,47 +117,30 @@ stealing one.
 
 ## Install
 
-There is no download. You build it, which is also why there is no Gatekeeper prompt to
-click through: an app you compiled yourself was never quarantined.
-
 ```sh
-git clone https://github.com/camwilso/openboard
-cd openboard
-mac/tools/bootstrap.sh
+brew install --cask camwilso/tap/openboard
 ```
 
-That does the whole build: it creates the local signing identity, compiles, installs to
-`/Applications` and opens the app. It is safe to re-run. The steps below are what it
-does and the two it cannot do for you.
+Or download `OpenBoard-<version>.zip` from
+[Releases](https://github.com/camwilso/openboard/releases), unzip, and drag it to
+`/Applications`. It is signed and notarized, so it opens without a Gatekeeper detour.
 
-```sh
-mac/tools/make-signing-cert.sh      # what bootstrap runs first — see step 1
-mac/tools/build-app.sh --install
-```
+Then, in the app:
 
-1. **Create the local signing identity** with `mac/tools/make-signing-cert.sh`. Do this
-   *before* the first build. macOS grants Input Monitoring and Accessibility to an
-   application identified by its code signature, and an ad-hoc signature has no stable
-   identity — so every rebuild is a brand new app to the system, and every permission
-   has to be granted again by hand. The symptom is nasty: the app looks fine and
-   silently cannot open the pad. A self-signed certificate fixes it. Nothing here
-   involves an Apple Developer account.
-2. **Build and install the app**: `mac/tools/build-app.sh --install`, which puts
-   `OpenBoard.app` in `/Applications`. Open it — it lives in the menu bar with no Dock
-   icon.
-3. **Grant permissions**, in Settings → Device. Each is per-application and only takes
+1. **Open it.** It lives in the menu bar with no Dock icon.
+2. **Grant permissions**, in Settings → Device. Each is per-application and only takes
    effect after the app restarts:
    - **Input Monitoring** — reading the pad, so every light and every key
    - **Accessibility** — typing snippets, sending ⏎ and ⎋, scrolling
    - **Automation** → Terminal for jumping to a chat, QuickTime Player for fun mode
-4. **Check the key order** in Settings → Device — optional, and worth ten seconds. The
+3. **Check the key order** in Settings → Device — optional, and worth ten seconds. The
    board runs on the layout every pad so far reports (slot 1 top-left, reading order),
    so it lights immediately. The check paints six colors and asks one question: are they
    in that order? If your pad disagrees, the same screen lets you map it by hand.
-5. **Wire the hooks**, in Settings → Device → Hooks. It audits `~/.claude/settings.json`
+4. **Wire the hooks**, in Settings → Device → Hooks. It audits `~/.claude/settings.json`
    and offers to repair it, preserving every unrelated setting and any other tool's
    hooks on the same events. It backs the file up first.
-6. **Keep the pad on Layer 1.** Per-key status renders only there; Layer 2 allows custom
+5. **Keep the pad on Layer 1.** Per-key status renders only there; Layer 2 allows custom
    keycodes but never shows status.
 
 Hooks load at session start, so open a new session to see it work. Sessions already
@@ -163,6 +149,41 @@ waiting for each one to do something.
 
 Turn on **Open OpenBoard at login** in Settings → Device. A board you have to remember
 to launch is not an ambient board.
+
+### Building it yourself
+
+The app is a SwiftPM package and needs no Apple Developer account to compile — see
+[Develop](#develop). One command does the whole thing:
+
+```sh
+git clone https://github.com/camwilso/openboard
+cd openboard
+mac/tools/bootstrap.sh
+```
+
+That creates a self-signed local identity, compiles, installs to `/Applications` and
+opens the app. The identity matters and is why the script exists: macOS grants Input
+Monitoring and Accessibility to an application identified by its *code signature*, and
+an ad-hoc signature has no stable identity — so every rebuild is a brand new app to the
+system, and every permission has to be granted again by hand. The symptom is nasty: the
+app looks fine and silently cannot open the pad.
+
+A build you signed yourself cannot update itself — the feed's signature will not verify
+against a key you do not have — so Check for Updates is hidden. `git pull` and re-run
+`bootstrap.sh`.
+
+## Updates
+
+The app checks once a day and offers the update in place. Take it: replacing the bundle
+where it stands is what keeps the Input Monitoring and Accessibility grants, the login
+item, and the hook paths in `~/.claude/settings.json` all pointing at something real.
+Downloading a fresh copy and dragging it over the old one usually works and sometimes
+does not.
+
+Turn the check off, or run one now, in Settings → Device.
+
+Homebrew is told not to manage upgrades for the same reason, so `brew upgrade` leaves
+the app alone and the in-app updater does the work.
 
 ## Where it keeps things
 
@@ -182,22 +203,20 @@ it whenever; the app makes a new one.
 
 ## Moving to another Mac
 
-Everything the app *is* travels in the repo; nothing it *knows* does. Clone, run
-`mac/tools/bootstrap.sh`, and expect to redo four things by hand.
+Install it again — `brew install --cask camwilso/tap/openboard` — and expect to redo
+three things by hand. Nothing the app *knows* travels with the app.
 
-**Do not copy `OpenBoard.app` across.** It is signed with a certificate that exists only
-in the keychain of the machine that built it, so on any other Mac the signature verifies
-against nothing — and a bundle that arrives over AirDrop or a USB stick is quarantined
-besides. Building takes about a minute and avoids both.
+**Do not copy `OpenBoard.app` across.** A bundle that arrives over AirDrop or a USB
+stick is quarantined, and it will not have the hooks or the permissions it needs on the
+far side anyway. A fresh install is faster than fixing that.
 
 | | Travels | Why not |
 |---|---|---|
-| The app, the tools, the docs | ✅ in the repo | |
+| The app | ✅ install it again | |
 | Session colours, key bindings, keycaps | ⚠️ copy the file | see below |
 | Which physical key is slot 1 | ⚠️ copy the file | or just re-check it, ten seconds |
 | Permissions | ❌ | granted per application **per machine**, by macOS |
 | Hooks in `~/.claude/settings.json` | ❌ | the command is an absolute path into that Mac's `/Applications` |
-| The local signing identity | ❌ | a private key, and it should stay in one keychain |
 | The pad itself | ❌ | pair it with the new Mac, and keep it on Layer 1 |
 | Fun mode's video | ❌ | 90MB and not ours to redistribute, so it is gitignored |
 
@@ -216,18 +235,20 @@ ids and ttys that mean nothing here, and it rebuilds itself the moment a session
 
 Nothing is installed outside your home directory except the app itself.
 
-1. Quit OpenBoard from the menu bar, and turn off **Open at login** first if it is on.
-2. Remove the hook entries from `~/.claude/settings.json` — the eight `openboard-hook`
-   commands under `hooks`. Every install writes a `settings.backup-<timestamp>.json`
-   beside it, so the one from before you started is a clean restore.
-3. `rm -rf /Applications/OpenBoard.app`
-4. `rm -rf ~/Library/Application\ Support/OpenBoard ~/Library/Logs/OpenBoard`
-5. Optionally `security delete-identity -c "OpenBoard Local Signing"` to remove the local
-   signing certificate.
+1. **Remove the hooks first**, in Settings → Device → Hooks, and turn off **Open at
+   login** if it is on.
+2. `brew uninstall --zap --cask openboard` — or, for a manual install, quit it from the
+   menu bar and `rm -rf /Applications/OpenBoard.app ~/Library/Application\ Support/OpenBoard ~/Library/Logs/OpenBoard`
+3. If you ever built it yourself, optionally `security delete-identity -c "OpenBoard Local Signing"`.
 
-Do not skip step 2. The helper exits quietly when the app is merely *not running*, which
-is normal and costs nothing — but once the bundle is deleted the hooks point at a binary
-that is not there, and every session will try to run it on every event.
+Do not skip step 1, and do it before step 2. The helper exits quietly when the app is
+merely *not running*, which is normal and costs nothing — but once the bundle is deleted
+the hooks point at a binary that is not there, and every session will try to run it on
+every event. Every install writes a `settings.backup-<timestamp>.json` beside
+`settings.json`, so the one from before you started is also a clean restore.
+
+`--zap` is what removes your settings and the calibration; without it they survive an
+uninstall, which is usually what you want when reinstalling.
 
 ## Jumping to a session
 
@@ -377,8 +398,32 @@ tools/reload.sh               # rebuild, reinstall and relaunch in one step
 
 (Those are `mac/tools/`, relative to the `cd mac` above.)
 
+The one dependency is [Sparkle](https://sparkle-project.org), for updates. Xcode would
+embed it; `build-app.sh` does it by hand — copy the framework in, drop the XPC services
+(they are for sandboxed apps, which this is not), and sign inside out.
+
+### Cutting a release
+
+Versions come from git tags. Nothing is written down twice: `CFBundleShortVersionString`
+is the tag, and `CFBundleVersion` is the commit count, which is what Sparkle compares
+and so has to only ever go up.
+
+```bash
+git tag v0.2.0 && git push origin v0.2.0   # CI does the rest
 ```
-```
+
+`.github/workflows/release.yml` builds universal, signs with Developer ID, notarizes,
+staples, appends to the appcast on the `feed` branch, and publishes the release. The same thing
+runs locally as `mac/tools/release.sh`, which needs a Developer ID certificate, notary
+credentials and the Sparkle private key on the machine — it checks for all three before
+building rather than failing forty seconds in.
+
+Universal builds go one triple at a time and then `lipo`, rather than SwiftPM's
+`--arch arm64 --arch x86_64`: that flag routes through XCBuild, which only ships with
+full Xcode, and this project has never needed more than the Command Line Tools.
+
+The Homebrew cask lives in [`packaging/homebrew/`](packaging/homebrew/openboard.rb);
+the copy Homebrew reads is in the `camwilso/homebrew-tap` repo.
 
 Tests are a **plain executable** rather than a `testTarget`. The Command Line Tools ship
 an incomplete `Testing.framework` (no `lib_TestingInterop.dylib`) and no `xcodebuild`, so
