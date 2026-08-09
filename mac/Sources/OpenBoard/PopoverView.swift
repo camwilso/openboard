@@ -75,7 +75,7 @@ struct PopoverView: View {
                     Text("Version \(version) is available")
                         .font(.system(size: 12.5, weight: .medium))
                     Spacer(minLength: 0)
-                    Text("Install…")
+                    Text("Install")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
@@ -298,7 +298,7 @@ struct PopoverView: View {
             // Close first, then open. The panel's dismissal is a click on the status
             // item, and doing it *after* activating our own window would land the click
             // while focus is already moving — which is how this reads as ignored.
-            MenuRow("Settings…") {
+            MenuRow("Settings") {
                 commands.dismissMenu()
                 commands.openSettings()
             }

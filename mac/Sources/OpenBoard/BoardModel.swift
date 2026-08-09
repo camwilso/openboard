@@ -242,7 +242,7 @@ enum DeviceStatus: Equatable {
     ///   here, because a status enum has no business knowing about preferences.
     func headline(_ name: String = "Codex Micro") -> String {
         switch self {
-        case .unknown: "Looking for the pad…"
+        case .unknown: "Looking for the pad"
         case .ready: "Connected to \(name)"
         case .bluetoothDisconnected: "Not connected over Bluetooth"
         case .bluetoothOff: "Bluetooth is off"

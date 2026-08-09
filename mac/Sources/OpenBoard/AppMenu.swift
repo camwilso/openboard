@@ -29,7 +29,7 @@ enum AppMenu {
         )
         appMenu.addItem(.separator())
 
-        let settings = NSMenuItem(title: "Settings…", action: openSettings, keyEquivalent: ",")
+        let settings = NSMenuItem(title: "Settings", action: openSettings, keyEquivalent: ",")
         settings.target = target
         appMenu.addItem(settings)
 

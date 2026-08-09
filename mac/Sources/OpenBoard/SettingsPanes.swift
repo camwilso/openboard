@@ -113,7 +113,7 @@ struct DevicePane: View {
                      targets have answered the button is not a control, it is a leftover.
                      */
                     if !automationSettled {
-                        Button(requestingAutomation ? "Asking…" : "Grant permissions") {
+                        Button(requestingAutomation ? "Asking" : "Grant permissions") {
                             requestAutomation()
                         }
                         .controlSize(.small)
@@ -203,7 +203,7 @@ struct DevicePane: View {
                             .fixedSize(horizontal: false, vertical: true)
 
                         HStack(spacing: 8) {
-                            Button(board.isCalibrationConfirmed ? "Recalibrate…" : "Check key order…") {
+                            Button(board.isCalibrationConfirmed ? "Recalibrate" : "Check key order") {
                                 calibrating = true
                             }
                             .controlSize(.small)
@@ -245,7 +245,7 @@ struct DevicePane: View {
     /**
      What the board currently believes about which key is which.
 
-     The button had no context: "Recalibrate…" on its own answers neither "is anything
+     The button had no context: "Recalibrate" on its own answers neither "is anything
      wrong?" nor "what would I be changing?", so the honest reading was that pressing it
      might break something that currently works.
 
@@ -423,7 +423,7 @@ struct DevicePane: View {
 
                     Spacer(minLength: 0)
 
-                    Button(updater.status.updateVersion == nil ? "Check Now" : "Install…") {
+                    Button(updater.status.updateVersion == nil ? "Check now" : "Install") {
                         if updater.status.updateVersion == nil {
                             commands.checkForUpdates()
                         } else {
@@ -456,7 +456,7 @@ struct DevicePane: View {
             guard let last = updater.lastCheck else { return "Not checked yet." }
             return "Last checked \(Self.relative(last))."
         case .checking:
-            return "Checking…"
+            return "Checking"
         case .available(let version):
             return "Version \(version) is available."
         case .upToDate:

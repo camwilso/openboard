@@ -125,10 +125,14 @@ struct CalibrationSheet: View {
                     .keyboardShortcut(.defaultAction)
                     .disabled(complete == nil)
                 } else {
-                    Button("No, they are different") { mapping = true }
-                    // Recorded, not merely accepted: saying yes is a confirmation of
+                    // Named for what each does, not for the answer it gives. "Yes, that
+                    // is the order" and "No, they are different" both truncated in a
+                    // 460pt sheet — and a truncated button is worse than a terse one,
+                    // because it hides the half that distinguishes it from its neighbour.
+                    Button("Remap") { mapping = true }
+                    // Recorded, not merely accepted: confirming is a statement about
                     // this pad, and it should stop being described as an assumption.
-                    Button("Yes, that is the order") {
+                    Button("Confirm") {
                         _ = commands.saveCalibration(Array(1...BoardLayout.slotCount))
                         dismiss()
                     }
