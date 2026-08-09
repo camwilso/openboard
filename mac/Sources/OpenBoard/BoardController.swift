@@ -35,9 +35,9 @@ final class BoardController: ObservableObject {
     private var countdown: CountdownPlayer?
     private lazy var pushToTalk = PushToTalk(log: { Log.write($0) })
     private var focusWatcher: FocusWatcher?
-    /// The tty of the frontmost Terminal tab, or nil. Drives `viewing`, and is never
-    /// written into the registry — see `Viewing`.
-    private var focusedTTY: String?
+    /// What is in front of you — a Terminal tab by tty, or a VS Code window by title.
+    /// Drives `viewing`, and is never written into the registry — see `Viewing`.
+    private var focused: FocusedSurface = .elsewhere
     /// Tab titles by tty. Claude Code writes a summary of the session there, and it
     /// stays current as the work changes — unlike anything in the transcript.
     private var terminalTitles: [String: String] = [:]
@@ -550,13 +550,16 @@ final class BoardController: ObservableObject {
      indicator never appeared and each edit leaked another observer and poll loop.
      */
     private func startFocusWatcher() {
-        let watcher = FocusWatcher { [weak self] tty in
-            guard let self, self.focusedTTY != tty else { return }
-            self.focusedTTY = tty
-            // Which slot it matched, not just which tty. A tty that matches nothing
-            // looks identical in the log to one that matches — and "the indicator does
-            // not work" is usually the session having no recorded tty, not the watcher.
-            let matched = self.registry.entries.first { $0.tty == tty }
+        let watcher = FocusWatcher { [weak self] surface in
+            guard let self, self.focused != surface else { return }
+            self.focused = surface
+            // Which slot it matched, not just what was in front. A handle that matches
+            // nothing looks identical in the log to one that matches — and "the
+            // indicator does not work" is usually the session having no recorded tty or
+            // no name yet, not the watcher.
+            let matched = self.registry.entries.first {
+                self.isFocused($0, name: self.name(of: $0))
+            }
             // Including what the key is told to emit: "the pulse is the wrong color" is
             // otherwise indistinguishable in the log from "focus never matched".
             let emitted = matched.map { entry -> String in
@@ -565,7 +568,7 @@ final class BoardController: ObservableObject {
                 return " -> slot \(entry.slot) (\(shown.rawValue)) "
                     + "\(look.color.hex)/\(look.effect.rawValue)@\(Int(look.brightness * 100))%"
             }
-            Log.write("focus: \(tty ?? "elsewhere")" + (emitted ?? ""))
+            Log.write("focus: \(Self.describe(surface))" + (emitted ?? ""))
             self.publish()
             Task { await self.paint() }
         }
@@ -589,8 +592,11 @@ final class BoardController: ObservableObject {
             Log.write("key JOY: no sessions to step to")
             return
         }
+        // The published flag rather than a second comparison of its own: this used to
+        // match a tty by suffix while `publish` matched it exactly, so the two could
+        // disagree about which slot you were in, and only one of them painted.
         let current = model.slots.first { slot in
-            slot.isLive && slot.cwd != nil && isFocusedSlot(slot)
+            slot.isLive && slot.cwd != nil && slot.isFocused
         }?.slot
 
         let next: Int
@@ -604,11 +610,6 @@ final class BoardController: ObservableObject {
         jump(to: next)
     }
 
-    private func isFocusedSlot(_ slot: SlotView) -> Bool {
-        guard let focusedTTY, let surface = slot.surface else { return false }
-        return focusedTTY.hasSuffix(surface)
-    }
-
     /// Re-read the tab titles, and republish only if one changed.
     ///
     /// On the presence cycle rather than on every repaint: it is an Apple Event per
@@ -620,10 +621,43 @@ final class BoardController: ObservableObject {
         publish()
     }
 
-    /// Whether this entry is the session in front of you.
-    private func isFocused(_ entry: SessionRegistry.Entry) -> Bool {
-        guard let focusedTTY, let tty = entry.tty else { return false }
-        return tty == focusedTTY
+    /**
+     Whether this entry is the session in front of you.
+
+     Two surfaces, matched on what each one actually exposes. A Terminal tab carries the
+     session's tty, which is exact. A VS Code window carries its active tab's name, and
+     the extension names that tab after the session — so the match is on the name the
+     board is already showing in the row, and a chat too young to have been named simply
+     does not match rather than matching the wrong one.
+     */
+    private func isFocused(_ entry: SessionRegistry.Entry, name: String?) -> Bool {
+        switch focused {
+        case let .terminal(tty):
+            return entry.tty == tty
+        case let .vscode(windowTitle):
+            guard entry.entrypoint == "claude-vscode", let name else { return false }
+            return WindowTitle.names(name, in: windowTitle)
+        case .elsewhere:
+            return false
+        }
+    }
+
+    /// What the row calls this session — the tab title where Terminal offers one, and
+    /// Claude Code's own name otherwise. Shared by `publish` and the focus match so the
+    /// two cannot disagree about what a session is called.
+    private func name(of entry: SessionRegistry.Entry) -> String? {
+        entry.tty.flatMap { terminalTitles[$0] }
+            ?? SessionTitle.forSession(transcriptPath: entry.transcriptPath)
+    }
+
+    /// One line for the log. A window title is long and a tty is not, so the title is
+    /// clipped rather than allowed to push the matched slot off the end of the line.
+    private static func describe(_ surface: FocusedSurface) -> String {
+        switch surface {
+        case let .terminal(tty): return tty
+        case let .vscode(windowTitle): return "vscode “\(windowTitle.prefix(60))”"
+        case .elsewhere: return "elsewhere"
+        }
     }
 
     private func ambientSide() -> CodexProtocol.LightingSide {
@@ -1364,11 +1398,11 @@ final class BoardController: ObservableObject {
                 }
                 // A free slot and a finished session both mean "nothing to look at".
                 // `viewing` is applied here rather than stored — see Viewing.
-                let state = entry.map { Viewing.display($0.state, isFocused: isFocused($0)) }
-                    ?? .ended
+                let viewing = entry.map { isFocused($0, name: name(of: $0)) } ?? false
+                let state = entry.map { Viewing.display($0.state, isFocused: viewing) } ?? .ended
                 let appearance = Viewing.appearance(
                     state,
-                    isFocused: entry.map(isFocused) ?? false,
+                    isFocused: viewing,
                     from: model.appearances
                 )
                 let effect = CodexProtocol.Effect(rawValue: appearance.effect.deviceCode) ?? .solid
@@ -1539,10 +1573,11 @@ final class BoardController: ObservableObject {
             // are otherwise identical rows.
             // The tab title first: Claude Code keeps it describing what the session
             // is *now*, where the first message describes what it was when it started.
-            let name = entry.tty.flatMap { terminalTitles[$0] }
-                ?? SessionTitle.forSession(transcriptPath: entry.transcriptPath)
-            let focused = isFocused(entry)
-            let shown = Viewing.display(entry.state, isFocused: focused)
+            let name = self.name(of: entry)
+            // Not `focused`: that is the property holding what is in front of you, and
+            // shadowing it here reads as though the two are the same thing.
+            let viewing = isFocused(entry, name: name)
+            let shown = Viewing.display(entry.state, isFocused: viewing)
             return SlotView(
                 slot: slot,
                 state: shown,
@@ -1563,8 +1598,8 @@ final class BoardController: ObservableObject {
                 cwd: entry.cwd,
                 // The same resolution the pad gets, from the same configured colors, so
                 // the dot and the swatch cannot drift from the key.
-                emitting: Viewing.appearance(shown, isFocused: focused, from: model.appearances),
-                isFocused: focused
+                emitting: Viewing.appearance(shown, isFocused: viewing, from: model.appearances),
+                isFocused: viewing
             )
         }
         model.apply(slots: slots)

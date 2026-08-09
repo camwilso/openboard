@@ -263,6 +263,63 @@ func runDiscoveryTests() {
         expectEqual(registry.entry(forSlot: 1)?.tty, "/dev/ttys000")
     }
 
+    /*
+     Real `ps` output, trimmed to the columns and abbreviated in the path only.
+
+     Every line here was observed at once on one Mac: three Terminal chats, one VS Code
+     chat, and the MCP server the same extension runs out of the same directory.
+    */
+    let extensionBinary =
+        "/Users/x/.vscode/extensions/anthropic.claude-code-2.1.226-darwin-arm64"
+            + "/resources/native-binary/claude"
+    let listing = """
+    98987 ttys000  claude
+    57023 ttys002  claude
+     4405 ??       \(extensionBinary) --output-format stream-json --verbose \
+    --input-format stream-json --max-thinking-tokens 31999 --permission-prompt-tool stdio
+     4440 ??       \(extensionBinary) --claude-in-chrome-mcp
+    12745 ??       /bin/zsh -c source /Users/x/.claude/shell-snapshots/snapshot-zsh.sh
+    """
+
+    test("a terminal chat and an extension-hosted chat are both found") {
+        let found = Discovery.parse(ps: listing)
+        expectEqual(found.count, 3)
+        expectEqual(found.map(\.pid), [98987, 57023, 4405])
+        expectEqual(found.map(\.entrypoint), ["cli", "cli", "claude-vscode"])
+        // No tty is the whole reason this one was invisible before.
+        expect(found.last?.tty == nil)
+        expectEqual(found.first?.tty, "/dev/ttys000")
+    }
+
+    test("the MCP server running the same binary is not a session") {
+        // Same path, same directory, not a chat. Only the stream-json flags separate
+        // them, which is why both halves of the signature are checked.
+        expect(!Discovery.parse(ps: listing).contains { $0.pid == 4440 })
+    }
+
+    test("a tty-less claude that is not the extension's is refused") {
+        // The failure this guards against was real: ten of these under an unrelated
+        // extension would take all six keys before a human session appeared.
+        let impostors = """
+        31000 ??       /usr/local/bin/claude --output-format stream-json --input-format stream-json
+        31001 ??       /Users/x/.other-editor/extensions/someone.else/claude \
+        --output-format stream-json --input-format stream-json
+        """
+        expect(Discovery.parse(ps: impostors).isEmpty)
+    }
+
+    test("two extension-hosted chats each get their own key") {
+        // Both have no tty, so a duplicate check that compared ttys directly would read
+        // the second as already on the board and silently drop it.
+        var registry = SessionRegistry()
+        let found = [
+            Discovery.Found(pid: 300, tty: nil, cwd: "/a", entrypoint: "claude-vscode"),
+            Discovery.Found(pid: 400, tty: nil, cwd: "/a", entrypoint: "claude-vscode"),
+        ]
+        expectEqual(registry.reconnect(found, isAlive: alwaysAlive), 2)
+        expectEqual(registry.entry(forSlot: 2)?.entrypoint, "claude-vscode")
+    }
+
     test("reconnecting twice does not take more keys") {
         var registry = SessionRegistry()
         let found = [Discovery.Found(pid: 100, tty: "/dev/ttys000", cwd: "/a")]

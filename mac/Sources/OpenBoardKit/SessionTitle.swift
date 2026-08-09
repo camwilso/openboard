@@ -192,6 +192,62 @@ public enum SessionTitle {
 }
 
 /**
+ Matching a session against the title of the window in front of you.
+
+ VS Code has no way to say which chat is open, but its window title leads with the
+ active tab's name and the Claude Code extension names its tabs after the session. So
+ the title is the handle — the equivalent of Terminal's per-tab `tty`, and the only one
+ on offer.
+
+ It is not a clean handle. Observed, from a real title bar:
+
+ ```
+ Investigate VS Code even… — Projects
+ ```
+
+ VS Code **truncates** the tab name, around 25 characters, with a single-character
+ ellipsis. A containment test against the session's full name therefore matches nothing,
+ ever — which is exactly how this behaved for its first hour: the log showed VS Code
+ focused and no slot matched, every time.
+
+ So the comparison runs the other way. Take the leading segment, drop the ellipsis, and
+ ask whether the session's name *starts with* what survived.
+
+ Two sessions whose names agree for 25 characters are indistinguishable here. That is a
+ real limit and an acceptable one: the alternative is no indicator at all, and the names
+ are written to describe different work.
+ */
+public enum WindowTitle {
+    /// VS Code's default `window.title` separator. A custom one is not chased: an
+    /// unrecognised layout ends as no match, which is the behaviour from before any of
+    /// this existed.
+    private static let separator = " — "
+
+    /// The character VS Code truncates with — one glyph, not three dots.
+    private static let ellipsis: Character = "…"
+
+    /// Does this window title name that session?
+    public static func names(_ name: String, in windowTitle: String) -> Bool {
+        guard !name.isEmpty else { return false }
+        guard var segment = windowTitle.components(separatedBy: separator).first?
+            .trimmingCharacters(in: .whitespaces), !segment.isEmpty
+        else { return false }
+
+        // The unsaved-editor marker sits in front of the name. A webview panel is never
+        // dirty, but the title format is not ours and this costs one comparison.
+        if segment.hasPrefix("●") {
+            segment = String(segment.dropFirst()).trimmingCharacters(in: .whitespaces)
+        }
+
+        guard segment.last == ellipsis else { return name == segment }
+        let visible = String(segment.dropLast()).trimmingCharacters(in: .whitespaces)
+        // A stub short enough to match half the board is not evidence of anything.
+        guard visible.count >= 8 else { return false }
+        return name.hasPrefix(visible)
+    }
+}
+
+/**
  Where a session is running.
 
  The two surfaces behave differently in ways that matter when you are looking at the

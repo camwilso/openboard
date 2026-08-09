@@ -232,7 +232,7 @@ enum Actions {
             return .focusFailed(slot: target.slot, reason: "\(raised)")
         }
 
-        guard confirmFrontmost(tty: target.surface) else {
+        guard confirmFrontmost(target) else {
             return .focusFailed(slot: target.slot, reason: "never became frontmost")
         }
 
@@ -243,26 +243,54 @@ enum Actions {
 
     enum Decision: Equatable { case approve, reject }
 
-    /// Poll until the target tab is actually frontmost, or give up.
+    /// Poll until the target session is actually in front, or give up.
     ///
     /// Bounded: a raise that never lands must not hang the key press.
-    private static func confirmFrontmost(tty: String?, timeout: TimeInterval = 1.5) -> Bool {
-        guard let tty else { return false }
-        let wanted = tty.hasPrefix("/dev/") ? tty : "/dev/\(tty)"
+    private static func confirmFrontmost(_ target: SlotView, timeout: TimeInterval = 1.5) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            let result = run("""
-            tell application "Terminal"
-              repeat with w from 1 to count of windows
-                if frontmost of window w then return tty of selected tab of window w
-              end repeat
-              return ""
-            end tell
-            """)
-            if result.ok, result.detail == wanted { return true }
+            if hasLanded(target) { return true }
             Thread.sleep(forTimeInterval: 0.08)
         }
         return false
+    }
+
+    /**
+     Is the thing in front of us the session we asked for?
+
+     Both surfaces answer this, by different means, and the third case answers *no* on
+     purpose:
+
+     - **Terminal** compares the frontmost tab's tty. Exact.
+     - **VS Code, extension-hosted** compares the focused window's title against the
+       session's name. The extension names its tab after the session, so a revealed chat
+       puts its name in the window title — see `VSCodeWindows`.
+     - **A session in VS Code's integrated terminal** cannot be confirmed at all. The pty
+       is not Terminal's, and no window title names it. Rather than assume the raise
+       landed and fire ⏎ into whatever is in front, this reports a failure — the whole
+       reason the check exists.
+     */
+    private static func hasLanded(_ target: SlotView) -> Bool {
+        if target.origin == .vscode {
+            guard target.entrypoint == "claude-vscode",
+                  target.isNamed, let name = target.title,
+                  VSCodeWindows.isFrontmost,
+                  let windowTitle = VSCodeWindows.focusedTitleNow()
+            else { return false }
+            return WindowTitle.names(name, in: windowTitle)
+        }
+
+        guard let tty = target.surface else { return false }
+        let wanted = tty.hasPrefix("/dev/") ? tty : "/dev/\(tty)"
+        let result = run("""
+        tell application "Terminal"
+          repeat with w from 1 to count of windows
+            if frontmost of window w then return tty of selected tab of window w
+          end repeat
+          return ""
+        end tell
+        """)
+        return result.ok && result.detail == wanted
     }
 
     // MARK: - plumbing

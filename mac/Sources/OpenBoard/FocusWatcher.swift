@@ -3,6 +3,23 @@ import Foundation
 import OpenBoardKit
 
 /**
+ What is in front of you, in terms a session can be matched against.
+
+ Two surfaces, two handles, and neither is interchangeable with the other: a Terminal tab
+ is identified by its tty, a VS Code window by its title. Keeping them as separate cases
+ rather than flattening both to a string is what stops a tty being compared against a
+ window title and matching nothing for reasons nobody can see.
+ */
+enum FocusedSurface: Equatable {
+    case terminal(tty: String)
+    /// The title of VS Code's focused window, which leads with the active tab's name —
+    /// and the Claude Code extension names its tabs after the session. See
+    /// `VSCodeWindows`.
+    case vscode(windowTitle: String)
+    case elsewhere
+}
+
+/**
  Which session you are actually looking at.
 
  `viewing` is idle-with-your-attention-on-it. Without it, the chat in front of you looks
@@ -19,25 +36,28 @@ import OpenBoardKit
  asked when it can have changed:
 
  - the frontmost app changes → check once
- - Terminal is frontmost → poll slowly, because switching *tabs* raises no notification
+ - a surface we can read is frontmost → poll slowly, because switching *tabs* raises no
+   notification in either app
  - anything else is frontmost → do not poll at all
 
  A tab switch is the only case that needs polling, and a second of latency on an
  ambient indicator is imperceptible.
+
+ VS Code was excluded from this for a long time, on the grounds that its windows do not
+ say which chat is open and a guess is worse than nothing. That was true of AppleScript
+ and is not true of the window title — so it is read here too, and a VS Code chat can
+ finally be the one you are looking at.
  */
 @MainActor
 final class FocusWatcher {
-    /// Terminal is the only surface where a session maps to a window exactly, via the
-    /// tty. VS Code's windows do not expose which chat is open, so a focused VS Code
-    /// deliberately reports nothing rather than guessing at one of several sessions.
     private static let terminalBundleID = "com.apple.Terminal"
 
-    private let onChange: (String?) -> Void
+    private let onChange: (FocusedSurface) -> Void
     private var pollTask: Task<Void, Never>?
     private var observer: NSObjectProtocol?
-    private var lastTTY: String??
+    private var last: FocusedSurface?
 
-    init(onChange: @escaping (String?) -> Void) {
+    init(onChange: @escaping (FocusedSurface) -> Void) {
         self.onChange = onChange
     }
 
@@ -61,24 +81,26 @@ final class FocusWatcher {
         observer = nil
     }
 
-    private var terminalIsFrontmost: Bool {
-        NSWorkspace.shared.frontmostApplication?.bundleIdentifier == Self.terminalBundleID
+    /// Which app is in front, if it is one whose windows we can read.
+    private static var readableFrontmost: String? {
+        let frontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        return [terminalBundleID, VSCodeWindows.bundleID].contains(frontmost) ? frontmost : nil
     }
 
     private func frontmostChanged() {
-        guard terminalIsFrontmost else {
+        guard Self.readableFrontmost != nil else {
             // Stop asking, and clear the indicator. Leaving it set would keep a key
             // breathing for a window that is no longer in front of you.
             pollTask?.cancel()
             pollTask = nil
-            publish(nil)
+            publish(.elsewhere)
             return
         }
         guard pollTask == nil else { return }
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
-                guard let self, self.terminalIsFrontmost else { break }
-                self.publish(await Self.frontmostTTY())
+                guard let self, let frontmost = Self.readableFrontmost else { break }
+                self.publish(await Self.surface(of: frontmost))
                 // Only a tab switch can change this without an activation
                 // notification, so a slow poll is enough.
                 try? await Task.sleep(for: .seconds(1))
@@ -86,12 +108,28 @@ final class FocusWatcher {
         }
     }
 
+    /// Ask whichever app is in front for its handle. Both reads can fail — a refused
+    /// Automation grant, a missing Accessibility grant — and both failures mean the same
+    /// thing as any other app being in front.
+    private static func surface(of bundleID: String) async -> FocusedSurface {
+        switch bundleID {
+        case terminalBundleID:
+            guard let tty = await frontmostTTY() else { return .elsewhere }
+            return .terminal(tty: tty)
+        case VSCodeWindows.bundleID:
+            guard let title = await VSCodeWindows.focusedTitle() else { return .elsewhere }
+            return .vscode(windowTitle: title)
+        default:
+            return .elsewhere
+        }
+    }
+
     /// Deduplicated: this drives a repaint, and repainting the pad every second
     /// because nothing changed is exactly the write traffic the board avoids.
-    private func publish(_ tty: String?) {
-        guard lastTTY != .some(tty) else { return }
-        lastTTY = .some(tty)
-        onChange(tty)
+    private func publish(_ surface: FocusedSurface) {
+        guard last != surface else { return }
+        last = surface
+        onChange(surface)
     }
 
     /// The tty of Terminal's frontmost tab.

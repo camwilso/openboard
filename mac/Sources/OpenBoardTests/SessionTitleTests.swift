@@ -131,6 +131,48 @@ func runSessionTitleTests() {
         expect(named?.settled == false)
     }
 
+    /*
+     Matching a chat against VS Code's title bar.
+
+     Every title here was read off a real window through the Accessibility API, which is
+     how the truncation was found at all: the first version compared the session's full
+     name against the title with `contains`, and matched nothing, ever.
+    */
+    test("a truncated window title still names its session") {
+        let name = "Investigate VS Code event detection in openboard"
+        expect(WindowTitle.names(name, in: "Investigate VS Code even… — Projects"))
+        // The one it must not match, from the same board.
+        expect(!WindowTitle.names("Generate Lorem ipsum text for a mockup",
+                                  in: "Investigate VS Code even… — Projects"))
+    }
+
+    test("an untruncated title matches exactly, not loosely") {
+        expect(WindowTitle.names("Ship the installer", in: "Ship the installer — Projects"))
+        // A name that merely starts the same is a different chat. Without the ellipsis
+        // there is nothing to say the title was cut, so a prefix proves nothing.
+        expect(!WindowTitle.names("Ship the installer today", in: "Ship the installer — Projects"))
+    }
+
+    test("the dirty marker does not break the match") {
+        // Not reachable for a webview panel, which is never unsaved — but the title
+        // format belongs to VS Code, not to us.
+        expect(WindowTitle.names("Ship the installer", in: "● Ship the installer — Projects"))
+    }
+
+    test("a stub too short to mean anything matches nothing") {
+        // A window whose title has been cut to almost nothing would otherwise match the
+        // first session on the board, which is worse than no indicator.
+        expect(!WindowTitle.names("Investigate VS Code event detection", in: "Inve… — Projects"))
+        expect(!WindowTitle.names("anything", in: ""))
+        expect(!WindowTitle.names("", in: "Ship the installer — Projects"))
+    }
+
+    test("a window that is not a chat matches nothing") {
+        // An ordinary editor tab. The board must not claim you are looking at a session
+        // because you happen to be in VS Code.
+        expect(!WindowTitle.names("Ship the installer", in: "Focus.swift — openboard"))
+    }
+
     test("an empty or malformed ai-title does not stop the scan") {
         // A blank title must not beat a real message, and it must not swallow a later
         // good one: `clean` returning nil is a skip, not an answer.

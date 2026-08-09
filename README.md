@@ -132,7 +132,7 @@ left rather than a board that cannot paint:
 | | |
 |---|---|
 | **Input Monitoring** | reading the pad, so every light and every key |
-| **Accessibility** | typing snippets, sending ⏎ and ⎋, scrolling |
+| **Accessibility** | typing snippets, sending ⏎ and ⎋, scrolling, reading VS Code's window titles |
 | **Automation** | driving System Events — granted in place, no trip to System Settings |
 | **Key order** | ten seconds, and worth it: colours and bindings are set per *slot* |
 | **Claude Code hooks** | edits `~/.claude/settings.json`, preserving everything else and backing it up first |
@@ -269,6 +269,23 @@ Clicking a session in the menu-bar popover does the same thing.
 Nothing is ever *opened* by a jump. The extension reveals a panel it already has, and the
 integrated-terminal case raises the app rather than opening the folder — an approximate jump beats
 an unrequested one that rearranges your editor.
+
+### Knowing which chat you are in
+
+Two more things need the same answer, and each surface gives it differently. Terminal exposes a
+`tty` per tab. VS Code exposes nothing — but its window title leads with the active tab's name, and
+the Claude Code extension names its tabs after the session, which is the same name the board shows
+in the row. So the title is read through the Accessibility API and matched against it.
+
+| | Terminal | VS Code, extension-hosted | VS Code integrated terminal |
+|---|---|---|---|
+| the key for the chat you are reading dims to *viewing* | yes, by `tty` | yes, by window title | no |
+| answering a permission prompt from the pad | yes | yes | no |
+
+VS Code truncates the tab name in the title bar — `Investigate VS Code even… — Projects` — so the
+match is a prefix rather than an equality, and two chats whose names agree for the first 25
+characters cannot be told apart. Where a session cannot be confirmed, the pad **refuses to answer
+its prompt** rather than sending ⏎ at whatever happens to be in front.
 
 **Press the Agent key itself.** They emit vendor keycodes rather than keystrokes, so nothing else
 on the system sees them — no hotkey daemon, no global shortcut, no conflict with anything you have

@@ -11,30 +11,51 @@ import Foundation
  This walks the process table instead, so the board is populated the moment the app
  starts.
 
- ## What it deliberately will not do
+ ## Two signatures, and nothing else
 
- **Only sessions with a real tty are claimed.** A terminal session is unambiguously
- `cli` and unambiguously interactive. A tty-less `claude` process might be the genuine
- VS Code extension — eligible — or an embedded SDK client, which is not: ten of those
- were once observed under an unrelated extension, and they would take all six keys
- before a human session appeared.
+ A terminal session is the bare `claude` command on a real tty: unambiguously `cli` and
+ unambiguously interactive.
 
- From outside the process there is no way to tell those apart. The environment variable
- that distinguishes them (`CLAUDE_AGENT_SDK_CLIENT_APP`) is only readable by the process
- itself, which is why the hook path forwards it and this path cannot see it. So this
- fails closed, exactly as the eligibility rules do: an extension-hosted session appears
- as soon as its first hook arrives, rather than being guessed at now.
+ An extension-hosted session has no tty at all, and for a long time that made it
+ undiscoverable. The reasoning was that a tty-less `claude` might be the genuine VS Code
+ extension — eligible — or an embedded SDK client, which is not: ten of those were once
+ observed under an unrelated extension, and they would take all six keys before a human
+ session appeared. `CLAUDE_AGENT_SDK_CLIENT_APP` tells them apart and is readable only by
+ the process itself, so the hook path forwards it and this path cannot.
+
+ But the *command line* says as much. A real VS Code chat runs Anthropic's binary out of
+ the installed extension, driven over a stream-json pipe:
+
+ ```
+ ~/.vscode/extensions/anthropic.claude-code-<version>/resources/native-binary/claude \
+   --output-format stream-json --verbose --input-format stream-json …
+ ```
+
+ An unrelated extension spawning `claude` runs its own copy or the one on `PATH`, not
+ Anthropic's out of Anthropic's directory — so the path is the discriminator that was
+ said not to exist. The flags are checked too, because the same binary in the same
+ directory also runs as `--claude-in-chrome-mcp`, which is a server rather than a chat.
+
+ Both halves must match, and either one changing means a session is not discovered —
+ which is where this started, and is still fail-closed. It appears on its first hook.
  */
 public enum Discovery {
     public struct Found: Equatable, Sendable {
         public let pid: Int
-        public let tty: String
+        /// Nil for an extension-hosted session. It has no controlling terminal, which
+        /// is exactly what kept it off the board until now.
+        public let tty: String?
         public let cwd: String?
+        /// What a hook would have reported. Discovery has to supply it because a
+        /// discovered session has not sent one — and without it an extension-hosted
+        /// chat would be labelled `cli`, land on the Terminal jump, and go nowhere.
+        public let entrypoint: String
 
-        public init(pid: Int, tty: String, cwd: String?) {
+        public init(pid: Int, tty: String?, cwd: String?, entrypoint: String = "cli") {
             self.pid = pid
             self.tty = tty
             self.cwd = cwd
+            self.entrypoint = entrypoint
         }
 
         /// A stand-in until a real hook supplies the session id. Prefixed so it is
@@ -50,22 +71,50 @@ public enum Discovery {
 
     /// Live interactive sessions, newest process last.
     public static func runningSessions() -> [Found] {
-        let listing = shell("/bin/ps", ["-axo", "pid=,tty=,command="])
-        var found: [Found] = []
+        parse(ps: shell("/bin/ps", ["-axo", "pid=,tty=,command="]))
+            .map { Found(pid: $0.pid, tty: $0.tty, cwd: workingDirectory(of: $0.pid), entrypoint: $0.entrypoint) }
+    }
+
+    /// Where the extension keeps its binary, relative to whichever extensions directory
+    /// is in use — `.vscode`, `.vscode-insiders`, or a portable install. Matching from
+    /// `/extensions/` rather than from home covers all of them without listing any.
+    private static let extensionSignature = "/extensions/anthropic.claude-code"
+
+    /// The flags the extension drives a chat with. The same binary in the same
+    /// directory also runs as an MCP server, and that is not a session.
+    private static let chatFlags = ["--output-format", "stream-json", "--input-format"]
+
+    /**
+     `ps` output to candidates. Pure, so the two signatures can be tested against real
+     command lines rather than against whatever happens to be running on this Mac.
+
+     The cwd is not resolved here — that is one `lsof` per process, and a parser that
+     shells out cannot be tested at all.
+     */
+    public static func parse(ps listing: String) -> [(pid: Int, tty: String?, entrypoint: String)] {
+        var found: [(pid: Int, tty: String?, entrypoint: String)] = []
 
         for line in listing.split(separator: "\n") {
-            let text = String(line)
-            let parts = text.split(separator: " ", omittingEmptySubsequences: true)
+            let parts = String(line).split(separator: " ", omittingEmptySubsequences: true)
             guard parts.count >= 3, let pid = Int(parts[0]) else { continue }
             let tty = String(parts[1])
             let command = parts.dropFirst(2).joined(separator: " ")
+            let executable = String(parts[2])
 
-            // The bare CLI. Anything with flags is being driven by something else, and
-            // anything without a tty cannot be told apart from an SDK client.
-            guard tty != "??", !tty.isEmpty else { continue }
-            guard command == "claude" || command.hasSuffix("/claude") else { continue }
+            if tty != "??", !tty.isEmpty {
+                // The bare CLI. Anything with flags on a tty is being driven by
+                // something else — a script, a wrapper, another tool's subprocess.
+                guard command == "claude" || command.hasSuffix("/claude") else { continue }
+                found.append((pid, "/dev/\(tty)", "cli"))
+                continue
+            }
 
-            found.append(Found(pid: pid, tty: "/dev/\(tty)", cwd: workingDirectory(of: pid)))
+            // No tty: eligible only on the extension's exact signature. See the type
+            // comment — the path is what separates a real chat from an SDK client.
+            guard executable.contains(extensionSignature), executable.hasSuffix("/claude"),
+                  chatFlags.allSatisfy({ command.contains($0) })
+            else { continue }
+            found.append((pid, nil, "claude-vscode"))
         }
         return found
     }
@@ -121,8 +170,11 @@ extension SessionRegistry {
 
         var added = 0
         for session in sessions {
+            // Guarded on the *session's* tty, not just the entry's: two extension-hosted
+            // chats both have none, and `nil == nil` would make the second one look like
+            // a duplicate of the first and cost it its key.
             let known = entries.contains {
-                $0.pid == session.pid || ($0.tty != nil && $0.tty == session.tty)
+                $0.pid == session.pid || (session.tty != nil && $0.tty == session.tty)
             }
             guard !known else { continue }
 
@@ -131,7 +183,7 @@ extension SessionRegistry {
                 cwd: session.cwd,
                 pid: session.pid,
                 tty: session.tty,
-                entrypoint: "cli",
+                entrypoint: session.entrypoint,
                 state: .idle,
                 now: now,
                 isAlive: isAlive
