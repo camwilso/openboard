@@ -559,7 +559,16 @@ struct DevicePane: View {
                 Button("Repair hooks") {
                     do {
                         try HookInstall.install(command: HookInstall.hookCommandPath())
-                        hookNote = "Wired. A backup of the previous file is beside it."
+                        // Naming the next step is the whole message. Hooks are read by
+                        // Claude Code when a session *starts*, so every session already
+                        // open keeps running without them — the board stays dark, the
+                        // pane says it succeeded, and the obvious conclusion is that it
+                        // did not. Sessions already running do get a key (the app walks
+                        // the process table), which makes it worse: they appear on the
+                        // board and then never change.
+                        hookNote = "Wired. Open a new Claude Code session to see it — "
+                            + "hooks load when a session starts, so ones already running "
+                            + "will not light. The previous settings file is backed up beside it."
                     } catch {
                         hookNote = error.localizedDescription
                     }
