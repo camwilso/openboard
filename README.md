@@ -175,8 +175,22 @@ The two never interleave writes mid-message.
 One of the action keys plays a video full-screen and drives the pad in time with it,
 overriding live status until it finishes.
 
-The beat grid is derived from the audio rather than guessed — see
-[the-final-countdown](the-final-countdown/) for how songs are mapped and how to add your
+The video is not included — it is ~90MB and not mine to redistribute — but the beat map
+is. Supply your own `.mp4` of **Europe – The Final Countdown** and the show works with no
+further setup:
+
+<!-- VIDEO-LINK: paste the URL of the upload analysis.json was built from -->
+
+```sh
+open ~/Library/Application\ Support/OpenBoard/Media/the-final-countdown/
+# drop the .mp4 in there — any filename, the first video found is used
+```
+
+**It has to be the same cut.** The grid is 4:55.5 long with the music starting 1.03s in,
+so a remaster or a version with a different intro will drift. If yours differs, regenerate
+the map — it takes one command and no dependencies.
+
+See [the-final-countdown](the-final-countdown/) for that, and for mapping songs of your
 own.
 
 ## Where things are kept
