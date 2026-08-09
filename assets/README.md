@@ -1,6 +1,6 @@
 # Screenshots
 
-Five images: two photographs and three window captures.
+Eight images: two photographs and six window captures.
 
 | File | What |
 |---|---|
@@ -8,7 +8,10 @@ Five images: two photographs and three window captures.
 | `ring.jpg` | The outer ring mid-lap after a session finished |
 | `popover.png` | The menu bar popover — four live sessions, two waiting |
 | `setup.png` | Guided setup, three of five complete |
-| `settings.png` | Settings → Board, mapping what each key does |
+| `settings.png` | Settings → Board, with a key selected: its action and the keycap picker |
+| `shows.png` | Settings → Colors, the ring laps and the ten built-in shows |
+| `device.png` | Settings → Device, permissions and version |
+| `menubar.png` | The status item — six dots mirroring the pad |
 
 The two photos are JPEG and the three captures are PNG, deliberately. A photograph as
 PNG is several megabytes for no visible gain; a UI capture as JPEG smears text. Both were

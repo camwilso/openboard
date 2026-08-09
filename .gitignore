@@ -37,9 +37,6 @@ mac/dist/
 .env.*
 secrets.json
 
-# Working notes. Kept locally rather than published: they are a record of what was
-# tried on this hardware, not documentation anybody should have to read.
-docs/
 
 # The asset generators and their inputs. Their output is committed, and neither can be
 # run by anyone else: one reads a private design repo, the other reads CodexBar.app.

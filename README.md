@@ -11,6 +11,25 @@ By **Cam Wilson** — [openboardapp.com](https://openboardapp.com) · MIT licens
        alt="A Codex Micro beside a MacBook, its keys lit green, blue and amber for different sessions">
 </p>
 
+Six sessions, six keys. Blue is thinking, green finished, amber needs you. You find out
+which one is blocked by glancing at your desk rather than cycling through tabs.
+
+The same six states sit in the menu bar, so it works with the pad out of sight:
+
+<p align="center">
+  <img src="assets/menubar.png" width="420"
+       alt="Six coloured dots in the macOS menu bar mirroring the pad">
+</p>
+
+### Documentation
+
+| | |
+|---|---|
+| [What it does](docs/what-it-does.md) | the states, the ring, how keys are assigned, jumping to a chat |
+| [Setting up](docs/setup.md) | installing, the five setup steps, and what each permission is for |
+| [Settings](docs/settings.md) | every pane — key mapping, colours, shows, permissions, updates |
+| [Troubleshooting](docs/troubleshooting.md) | the four things that usually go wrong |
+
 > [!NOTE]
 > **Keep the pad on Layer 1.** Per-key status renders only there — writes succeed on
 > other layers and simply do not appear.
@@ -42,7 +61,8 @@ or Claude painted it.
 | error | `#D41145` breathing | turn failed |
 
 **done holds.** Work that finished while you were elsewhere is still green when you look,
-rather than having quietly reverted to idle.
+rather than having quietly reverted to idle. It clears when you go back and send that
+session something — see [What it does](docs/what-it-does.md).
 
 ### The ring
 
@@ -117,6 +137,7 @@ menu bar.
 
 It is a checklist rather than a wizard, because two of those only take effect after
 OpenBoard restarts. Stop and come back whenever; it works out what is left each time.
+[Setting up](docs/setup.md) covers each step and what it is for.
 
 Two things it cannot do for you, both on the hardware: pair the pad, and keep it on
 Layer 1.
@@ -142,10 +163,17 @@ prompt** rather than sending ⏎ at whatever happens to be there.
 **Press the dial** for the popover, **hold it** for Settings. Every other key is yours to
 bind.
 
+Every key other than the six Agent keys is yours to bind — pick what it does and which
+keycap it wears:
+
 <p align="center">
-  <img src="assets/settings.png" width="760"
-       alt="Settings: mapping what each key on the pad does">
+  <img src="assets/settings.png" width="820"
+       alt="Settings: choosing a key's action and its keycap from the icon set">
 </p>
+
+The ring has ten built-in shows beyond the three the board uses on its own, and fun mode
+takes over the whole pad for the length of a song. Both live in Settings → Colors —
+[the full tour](docs/settings.md).
 
 ## Updates
 
