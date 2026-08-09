@@ -30,9 +30,9 @@ concurrency:
 
 jobs:
   test:
-    # Not macos-latest: a runner image rolling forward should never be the thing that
-    # breaks the build, and this project pins the same image the release job uses.
-    runs-on: macos-15
+    # macos-26 — see the note in release.yml. The app compiles against macOS 26 API
+    # that is availability-gated at runtime but still has to exist at build time.
+    runs-on: macos-26
 
     steps:
       - uses: actions/checkout@v4

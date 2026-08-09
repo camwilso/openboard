@@ -34,8 +34,18 @@ permissions:
 
 jobs:
   release:
-    # Not macos-latest: a runner image change should never be what breaks a release.
-    runs-on: macos-15
+    # macos-26, and pinned rather than macos-latest.
+    #
+    # The app draws with Liquid Glass — glassEffect, GlassEffectContainer,
+    # .glassProminent — which are macOS 26 API. Every call is behind
+    # `if #available(macOS 26.0, *)`, so it runs correctly on macOS 14 without them,
+    # but availability gating is a *runtime* check: the symbols still have to exist in
+    # the SDK it compiles against. macos-15 does not have them, so the build fails
+    # before any of that matters.
+    #
+    # Pinned because an image rolling forward should never be the thing that breaks a
+    # release — which is exactly what the version skew here already demonstrated.
+    runs-on: macos-26
 
     steps:
       - uses: actions/checkout@v4
