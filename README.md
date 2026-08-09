@@ -28,6 +28,7 @@ The same six states sit in the menu bar, so it works with the pad out of sight:
 | [What it does](docs/what-it-does.md) | the states, the ring, how keys are assigned, jumping to a chat |
 | [Setting up](docs/setup.md) | installing, the five setup steps, and what each permission is for |
 | [Settings](docs/settings.md) | every pane — key mapping, colours, shows, permissions, updates |
+| [Other agents](docs/harnesses.md) | Hermes and Pi, what they cannot do yet, and where help is wanted |
 | [Troubleshooting](docs/troubleshooting.md) | the four things that usually go wrong |
 
 > [!NOTE]
@@ -98,6 +99,25 @@ you cannot trust is worse than no status.
 Only sessions running **on this Mac** get a key, because that is where the hooks execute.
 Terminal and VS Code both work. Subagents deliberately do not — six keys is a scarce
 budget — and anything remote is unreachable.
+
+## Other agents
+
+Built for **Claude Code**, and that is the one tested at length — daily, for months,
+across Terminal and both VS Code surfaces. Hooks install automatically and every state
+works.
+
+Two others are wired, from their documentation rather than from use, and each has a real
+gap the app declares rather than hides:
+
+| | |
+|---|---|
+| **Claude Code** | complete — automatic setup, every state |
+| **Hermes Agent** | no completion event, so a key never turns green |
+| **Pi** | no documented approval event, so a key never turns amber — the state this exists for |
+
+**This is where contributions would help most.** If you use Hermes or Pi daily and know
+whether those signals really are missing, that is worth more than a patch — see
+[Other agents](docs/harnesses.md).
 
 ## Requirements
 

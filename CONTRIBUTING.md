@@ -129,6 +129,17 @@ permanent for that version number, and invisible except as "nobody is updating".
 
 `release.sh` refuses a tag that is not an ancestor of `main`, and refuses a dirty tree.
 
+## Where help is most wanted
+
+Support for agents other than Claude Code. Hermes and Pi are wired from their
+documentation rather than from use, and each has a gap the app declares openly: Hermes has
+no completion event, so a key never turns green; Pi has no documented approval event, so a
+key never turns amber — which is the state the board exists for.
+
+If you use either daily, knowing whether those signals genuinely do not exist is worth
+more than a patch. See [docs/harnesses.md](docs/harnesses.md), and open an issue before
+writing much — the board's model constrains what a harness has to provide.
+
 ## Things worth knowing before changing them
 
 Several constants here look arbitrary and are not. The reasoning lives in comments beside
