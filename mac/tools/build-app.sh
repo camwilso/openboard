@@ -58,6 +58,26 @@ BUNDLE_ID="com.openboardapp.mac"
 # back it up with `generate_keys -x`, somewhere that is not this repo.
 SPARKLE_PUBLIC_KEY=${OB_SPARKLE_PUBLIC_KEY:-"CqSaxWCpPony+XcxRwCq73cnQ/g/Mw3mlEKYjYU0Z64="}
 
+# The update feed. Overridable only so tools/test-update.sh can point a throwaway build
+# at a local server and watch a real update happen without publishing anything.
+#
+# Nothing else should set this. The value compiled into a shipped build is read by that
+# install forever, so a release that goes out pointing at localhost is an install that
+# can never be updated again — see the note beside SUFeedURL below.
+FEED_URL=${OB_FEED_URL:-"https://updates.openboardapp.com/appcast.xml"}
+
+# Sparkle refuses a plain-HTTP feed unless the updates themselves are signed, which
+# ours are — but macOS App Transport Security blocks the request before Sparkle sees
+# it. The exception is added only for a local test feed, never for a real build.
+ATS_EXCEPTION=""
+case "$FEED_URL" in
+  http://localhost*|http://127.0.0.1*)
+    ATS_EXCEPTION='  <key>NSAppTransportSecurity</key>
+  <dict><key>NSAllowsLocalNetworking</key><true/></dict>'
+    printf 'NOTE: building against a LOCAL test feed — %s\n' "$FEED_URL"
+    ;;
+esac
+
 while [ $# -gt 0 ]; do
   case "$1" in
     --force) FORCE=1; shift ;;
@@ -92,7 +112,7 @@ BUILD=${OB_BUILD:-$(git -C "$ROOT" rev-list --count HEAD 2>/dev/null || echo 1)}
 STAMP=$(cat "$ROOT"/Sources/OpenBoard/*.swift "$ROOT"/Sources/OpenBoardKit/*.swift \
   "$ROOT"/Sources/openboard-hook/*.swift "$ROOT"/Sources/openboard-icon/*.swift "$0" \
   | shasum -a 256 | cut -d" " -f1)
-STAMP="$STAMP-$CONFIG-$VERSION-$BUILD${UNIVERSAL:+-universal}"
+STAMP="$STAMP-$CONFIG-$VERSION-$BUILD${UNIVERSAL:+-universal}-$(printf %s "$FEED_URL" | shasum -a 256 | cut -c1-8)"
 
 if [ -z "$FORCE" ] && [ -d "$APP" ]; then
   EXISTING=$(/usr/libexec/PlistBuddy -c "Print :OBSourceStamp" "$APP/Contents/Info.plist" 2>/dev/null || true)
@@ -243,7 +263,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
        The enclosure URLs *inside* the feed are free to live on GitHub Releases: the
        feed is rewritten every release, so those can move whenever. -->
   <key>SUFeedURL</key>
-  <string>https://updates.openboardapp.com/appcast.xml</string>
+  <string>$FEED_URL</string>
+$ATS_EXCEPTION
   <key>SUPublicEDKey</key>
   <string>$SPARKLE_PUBLIC_KEY</string>
   <key>SUEnableAutomaticChecks</key>    <true/>

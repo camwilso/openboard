@@ -1,0 +1,102 @@
+# Build and test every push.
+#
+# The release workflow only fires on a tag, which meant a broken main was discovered
+# at the exact moment you were trying to ship from it. This runs on the ordinary
+# pushes instead, and needs no secrets at all — nothing here signs, notarizes or
+# publishes, so it is safe on a fork and on a pull request from one.
+#
+# It does assemble the bundle. The unit tests cannot catch a Sparkle framework that
+# fails to embed, an Info.plist that will not parse, or inside-out signing that breaks
+# when a path changes — and every one of those is invisible until you try to build a
+# release. Assembling it here is about forty seconds and covers all three.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Nothing is written. Explicit rather than inherited, so a change to the repository
+# default cannot quietly widen what this job can do.
+permissions:
+  contents: read
+
+concurrency:
+  # A second push to the same branch makes the first run irrelevant.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # Not macos-latest: a runner image rolling forward should never be the thing that
+    # breaks the build, and this project pins the same image the release job uses.
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # build-app.sh reads the version from git describe and the build number from
+          # the commit count. A shallow clone has neither, and the failure is a bundle
+          # stamped 0.0.0 rather than an error.
+          fetch-depth: 0
+
+      - name: Cache SwiftPM
+        uses: actions/cache@v4
+        with:
+          path: mac/.build
+          key: spm-${{ runner.os }}-${{ hashFiles('mac/Package.resolved', 'mac/Package.swift') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      - name: Resolve dependencies
+        working-directory: mac
+        run: swift package resolve
+
+      - name: Build
+        working-directory: mac
+        run: swift build --product OpenBoard
+
+      # A plain executable, not XCTest — the Command Line Tools ship an incomplete
+      # Testing.framework, so the suite is its own binary. It exits non-zero on failure,
+      # which is all a CI step needs.
+      - name: Test
+        working-directory: mac
+        run: swift run OpenBoardTests
+
+      # Ad-hoc signed, because there is no Developer ID here and there should not be:
+      # this job runs on pull requests, including from forks. Ad-hoc still exercises
+      # everything that actually breaks — the framework embed, the nested-code signing
+      # order, and whether codesign --verify --deep --strict passes at all.
+      - name: Assemble the app bundle
+        run: mac/tools/build-app.sh --force
+
+      - name: Verify the bundle
+        run: |
+          set -euo pipefail
+          APP=mac/dist/OpenBoard.app
+          codesign --verify --deep --strict "$APP"
+
+          # The hook helper is the specific thing that used to slip through: it signed
+          # clean on its own and then failed notarization inside the bundle, because
+          # SwiftPM's linker had given it an ad-hoc signature with no hardened runtime.
+          codesign -dv "$APP/Contents/MacOS/openboard-hook" 2>&1 | grep -q "runtime" \
+            || { echo "hook helper is missing the hardened runtime flag"; exit 1; }
+
+          # Sparkle has to be embedded and stripped of the sandbox-only XPC services.
+          test -d "$APP/Contents/Frameworks/Sparkle.framework" \
+            || { echo "Sparkle.framework is not embedded"; exit 1; }
+          test ! -d "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices" \
+            || { echo "XPCServices should have been stripped"; exit 1; }
+
+          # The feed URL is compiled in and unchangeable once shipped. A typo here is
+          # not recoverable for anyone who installed the build, so it is asserted.
+          FEED=$(/usr/libexec/PlistBuddy -c "Print :SUFeedURL" "$APP/Contents/Info.plist")
+          test "$FEED" = "https://updates.openboardapp.com/appcast.xml" \
+            || { echo "unexpected SUFeedURL: $FEED"; exit 1; }
+
+          # An empty public key ships an app that cannot ever update itself.
+          KEY=$(/usr/libexec/PlistBuddy -c "Print :SUPublicEDKey" "$APP/Contents/Info.plist")
+          test -n "$KEY" || { echo "SUPublicEDKey is empty"; exit 1; }
+
+          echo "bundle verified"
