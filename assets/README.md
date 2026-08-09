@@ -1,6 +1,6 @@
 # Screenshots
 
-Three of these are captured; the fourth needs a camera.
+Five images: two photographs and three window captures.
 
 | File | What |
 |---|---|
