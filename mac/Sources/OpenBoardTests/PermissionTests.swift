@@ -124,11 +124,12 @@ func runSetupProgressTests() {
     test("a fresh install has nothing done and knows where to start") {
         let progress = SetupProgress(
             inputMonitoring: .denied, accessibility: .denied,
-            systemEvents: .unknown, hooksHealthy: false, opensAtLogin: false
+            systemEvents: .unknown, calibrationConfirmed: false,
+            hooksHealthy: false, opensAtLogin: false
         )
         expect(!progress.isReady)
         expectEqual(progress.requiredDone, 0)
-        expectEqual(progress.requiredTotal, 4)
+        expectEqual(progress.requiredTotal, 5)
         expectEqual(progress.next, .inputMonitoring)
     }
 
@@ -137,21 +138,36 @@ func runSetupProgressTests() {
         // decided about launching at login.
         let progress = SetupProgress(
             inputMonitoring: .granted, accessibility: .granted,
-            systemEvents: .granted, hooksHealthy: true, opensAtLogin: false
+            systemEvents: .granted, calibrationConfirmed: true,
+            hooksHealthy: true, opensAtLogin: false
         )
         expect(progress.isReady)
-        expectEqual(progress.requiredDone, 4)
-        expectEqual(progress.requiredTotal, 4)
+        expectEqual(progress.requiredDone, 5)
+        expectEqual(progress.requiredTotal, 5)
         expect(progress.next == nil)
     }
 
     test("next skips what is already done") {
         let progress = SetupProgress(
             inputMonitoring: .granted, accessibility: .granted,
-            systemEvents: .unknown, hooksHealthy: false, opensAtLogin: true
+            systemEvents: .unknown, calibrationConfirmed: false,
+            hooksHealthy: false, opensAtLogin: true
         )
         expectEqual(progress.next, .automation)
         expectEqual(progress.requiredDone, 2)
+    }
+
+    test("an unconfirmed key order blocks readiness") {
+        // The board lights perfectly well on the assumed order, which is exactly why
+        // this is easy to miss: colours and bindings are set per slot, so an unchecked
+        // order puts every one of them on a key the user did not pick.
+        let progress = SetupProgress(
+            inputMonitoring: .granted, accessibility: .granted,
+            systemEvents: .granted, calibrationConfirmed: false,
+            hooksHealthy: true, opensAtLogin: true
+        )
+        expect(!progress.isReady)
+        expectEqual(progress.next, .calibration)
     }
 
     test("an unavailable automation target is not a grant") {
@@ -160,7 +176,8 @@ func runSetupProgressTests() {
         // nobody has confirmed.
         let progress = SetupProgress(
             inputMonitoring: .granted, accessibility: .granted,
-            systemEvents: .unavailable, hooksHealthy: true, opensAtLogin: false
+            systemEvents: .unavailable, calibrationConfirmed: true,
+            hooksHealthy: true, opensAtLogin: false
         )
         expect(!progress.isReady)
         expectEqual(progress.next, .automation)

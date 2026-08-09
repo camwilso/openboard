@@ -35,6 +35,7 @@ struct OpenBoardApp: App {
                 // *observe* the update status, and BoardCommands is a struct of
                 // closures with nothing for SwiftUI to watch.
                 .environmentObject(delegate.updater)
+                .environmentObject(delegate.setup)
                 .environment(\.boardCommands, commands)
                 .tint(SystemColors.selectedRow)
         } label: {
@@ -155,6 +156,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// is constructed here rather than on first use — an updater nobody opens Settings
     /// to see is still the one that has to notice a release.
     let updater = Updater()
+    /// One answer to "is this install finished", shared by the popover, the settings
+    /// panes and the setup window. Lazy because it reads `board`.
+    lazy var setup = SetupState(board: board)
     private(set) var controller: BoardController?
 
     /// The settings window, kept alive across opens so it remembers where it was.
@@ -214,14 +218,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
      */
     @objc func showSetup() {
         if setupWindow == nil {
-            setupWindow = SetupWindowController(commands: commands)
+            setupWindow = SetupWindowController(commands: commands, board: board, setup: setup)
         }
         setupWindow?.show()
     }
 
     @objc func showMainWindow() {
         if mainWindow == nil {
-            mainWindow = MainWindowController(board: board, commands: commands, updater: updater)
+            mainWindow = MainWindowController(board: board, commands: commands, updater: updater, setup: setup)
         }
         mainWindow?.show()
     }

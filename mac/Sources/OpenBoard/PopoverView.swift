@@ -16,6 +16,7 @@ struct PopoverView: View {
     @EnvironmentObject private var board: BoardModel
     @EnvironmentObject private var battery: BatteryMonitor
     @EnvironmentObject private var updater: Updater
+    @EnvironmentObject private var setup: SetupState
     @Environment(\.boardCommands) private var commands
 
     private let width: CGFloat = 376
@@ -25,7 +26,20 @@ struct PopoverView: View {
             header
             Divider().opacity(0.6)
 
-            if board.device.isUsable {
+            // Setup first, then the hardware. An install missing hooks has a working
+            // pad and six keys that will never change — showing that board is showing
+            // something that looks live and is not, which is worse than showing
+            // nothing. The device states below are for a set-up install whose pad has
+            // gone away.
+            if !setup.isReady {
+                SetupNeededView(
+                    progress: setup.progress,
+                    startSetup: {
+                        commands.dismissMenu()
+                        commands.openSetup()
+                    }
+                )
+            } else if board.device.isUsable {
                 // Deliberately *not* a ScrollView. Inside a MenuBarExtra window it is
                 // proposed no height and collapses to nothing — which is exactly how the
                 // session list came to be invisible while the commands below it rendered
@@ -54,6 +68,9 @@ struct PopoverView: View {
             commandRows
         }
         .frame(width: width)
+        // Cheap, and this is the only moment anyone is looking. A popover that opened
+        // with a stale answer would keep offering setup after it was finished.
+        .onAppear { setup.refresh() }
     }
 
     // MARK: update
@@ -115,7 +132,20 @@ struct PopoverView: View {
 
             Spacer(minLength: 0)
 
-            if board.device.isUsable {
+            // Setup first, then the hardware. An install missing hooks has a working
+            // pad and six keys that will never change — showing that board is showing
+            // something that looks live and is not, which is worse than showing
+            // nothing. The device states below are for a set-up install whose pad has
+            // gone away.
+            if !setup.isReady {
+                SetupNeededView(
+                    progress: setup.progress,
+                    startSetup: {
+                        commands.dismissMenu()
+                        commands.openSetup()
+                    }
+                )
+            } else if board.device.isUsable {
                 BatteryBadge(percent: battery.percent, isCharging: board.isWired)
             }
         }
@@ -655,5 +685,69 @@ struct HoverRowStyle: ButtonStyle {
         configuration.label
             .background(hovering ? tint : .clear, in: .rect(cornerRadius: 7))
             .onHover { hovering = $0 }
+    }
+}
+
+/**
+ The board is not shown yet, and why.
+
+ Distinct from `DisconnectedView`, which is about the hardware. This one is about the
+ install: the pad may be sitting there connected and perfectly happy, and the six keys
+ would still never change, because nothing is reporting. A board that looks live and is
+ not is worse than no board — it is the difference between "my pad is broken" and "I
+ have not finished".
+
+ It names the remaining steps rather than saying "setup incomplete". The count is what
+ turns an unknown obligation into a short errand.
+ */
+struct SetupNeededView: View {
+    let progress: SetupProgress
+    var startSetup: () -> Void = {}
+
+    var body: some View {
+        VStack(spacing: 9) {
+            ZStack {
+                Circle().fill(Color(RGB(0x0C47E9)).opacity(0.18))
+                Image(systemName: "checklist")
+                    .font(.system(size: 17))
+                    .foregroundStyle(Color(RGB(0x6C93FF)))
+            }
+            .frame(width: 38, height: 38)
+
+            Text("\(progress.requiredDone) of \(progress.requiredTotal) set up")
+                .font(.system(size: 13.5, weight: .semibold))
+
+            Text(remaining)
+                .font(.system(size: 11.5))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 296)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button("Continue setup") { startSetup() }
+                .glassButton(prominent: true)
+                .padding(.top, 3)
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 16)
+        .padding(.bottom, 18)
+    }
+
+    private var remaining: String {
+        let missing = SetupProgress.Step.allCases
+            .filter { $0.isRequired && !progress.isDone($0) }
+        guard !missing.isEmpty else { return "Almost there." }
+        return "Still needed: " + missing.map(label).joined(separator: ", ") + "."
+    }
+
+    private func label(_ step: SetupProgress.Step) -> String {
+        switch step {
+        case .inputMonitoring: "Input Monitoring"
+        case .accessibility: "Accessibility"
+        case .automation: "Automation"
+        case .calibration: "key order"
+        case .hooks: "Claude Code hooks"
+        case .openAtLogin: "Open at login"
+        }
     }
 }

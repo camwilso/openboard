@@ -69,6 +69,7 @@ struct NotReadyView: View {
         case .inputMonitoring: "Input Monitoring"
         case .accessibility: "Accessibility"
         case .automation: "Automation"
+        case .calibration: "Key order"
         case .hooks: "Claude Code hooks"
         case .openAtLogin: "Open at login"
         }
@@ -86,14 +87,14 @@ struct NotReadyView: View {
 struct RequiresSetup: ViewModifier {
     let purpose: String
     @Environment(\.boardCommands) private var commands
-    @State private var progress = SetupProgress(done: [])
+    @EnvironmentObject private var setup: SetupState
 
     func body(content: Content) -> some View {
         Group {
-            if progress.isReady {
+            if setup.isReady {
                 content
             } else {
-                NotReadyView(progress: progress, purpose: purpose) {
+                NotReadyView(progress: setup.progress, purpose: purpose) {
                     commands.openSetup()
                 }
             }
@@ -101,31 +102,7 @@ struct RequiresSetup: ViewModifier {
         // Re-read on appearance rather than held: permissions change outside this app,
         // and a pane that decided it was blocked at launch would stay blocked for the
         // rest of the session after the user fixed it.
-        .onAppear(perform: refresh)
-    }
-
-    private func refresh() {
-        let permissions = PermissionProbe.inspect()
-        let hooks = HookInstall.audit(
-            settings: HookInstall.loadSettings(),
-            expectedCommand: HookInstall.hookCommandPath()
-        )
-        progress = SetupProgress(
-            inputMonitoring: permissions.inputMonitoring,
-            accessibility: permissions.accessibility,
-            systemEvents: permissions.automation["System Events"] ?? .unknown,
-            hooksHealthy: hooks.isHealthy,
-            opensAtLogin: LoginItem.status.isOn
-        )
-
-        // System Events asleep reads as "cannot tell", which would block a pane on a
-        // permission the user has actually granted.
-        if permissions.automation["System Events"] == .unavailable {
-            Task {
-                await AutomationRequest.wakeProbeableTargets()
-                refresh()
-            }
-        }
+        .onAppear { setup.refresh() }
     }
 }
 

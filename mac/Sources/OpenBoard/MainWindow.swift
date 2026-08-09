@@ -35,11 +35,13 @@ final class MainWindowController: NSObject, NSWindowDelegate {
     /// Injected rather than reached for: the settings window shows update status, and
     /// there is exactly one updater, owned by the app delegate.
     private let updater: Updater
+    private let setup: SetupState
 
-    init(board: BoardModel, commands: BoardCommands, updater: Updater) {
+    init(board: BoardModel, commands: BoardCommands, updater: Updater, setup: SetupState) {
         self.board = board
         self.commands = commands
         self.updater = updater
+        self.setup = setup
     }
 
     /// Open it, or bring it forward if it is already up.
@@ -109,6 +111,7 @@ final class MainWindowController: NSObject, NSWindowDelegate {
             rootView: SettingsWindow()
                 .environmentObject(board)
                 .environmentObject(updater)
+                .environmentObject(setup)
                 .environment(\.boardCommands, commands)
                 .tint(SystemColors.selectedRow)
         )

@@ -22,6 +22,14 @@ import Foundation
  hooks before granting anything has done a useful thing, and refusing the click would be
  pedantry. The order is advice.
 
+ ## Why calibration counts
+
+ The board runs on the order every pad so far reports, so an unchecked install lights
+ perfectly well — which is exactly why this is easy to get wrong. Board and Colors let
+ you assign a colour to *slot 3*, and if slot 3 is not the key you think it is, every
+ choice you make there lands somewhere else. Ten seconds of confirming beats a
+ configuration that is quietly wrong.
+
  ## What is not here
 
  Layer 1 and pairing the pad. Neither is detectable — the pad reports nothing about its
@@ -34,6 +42,10 @@ public struct SetupProgress: Equatable, Sendable {
         case inputMonitoring
         case accessibility
         case automation
+        // After the permissions and before hooks, because it needs the first one:
+        // the check paints six colours on the pad, which cannot happen until macOS
+        // lets the app open it.
+        case calibration
         case hooks
         case openAtLogin
 
@@ -42,7 +54,7 @@ public struct SetupProgress: Equatable, Sendable {
         /// they do not count against "ready".
         public var isRequired: Bool {
             switch self {
-            case .inputMonitoring, .accessibility, .automation, .hooks: true
+            case .inputMonitoring, .accessibility, .automation, .calibration, .hooks: true
             case .openAtLogin: false
             }
         }
@@ -54,7 +66,7 @@ public struct SetupProgress: Equatable, Sendable {
         public var needsRestart: Bool {
             switch self {
             case .inputMonitoring, .accessibility: true
-            case .automation, .hooks, .openAtLogin: false
+            case .automation, .calibration, .hooks, .openAtLogin: false
             }
         }
     }
@@ -76,6 +88,7 @@ public struct SetupProgress: Equatable, Sendable {
         inputMonitoring: PermissionProbe.Status,
         accessibility: PermissionProbe.Status,
         systemEvents: PermissionProbe.Status,
+        calibrationConfirmed: Bool,
         hooksHealthy: Bool,
         opensAtLogin: Bool
     ) {
@@ -83,6 +96,7 @@ public struct SetupProgress: Equatable, Sendable {
         if inputMonitoring.isGranted { done.insert(.inputMonitoring) }
         if accessibility.isGranted { done.insert(.accessibility) }
         if systemEvents.isGranted { done.insert(.automation) }
+        if calibrationConfirmed { done.insert(.calibration) }
         if hooksHealthy { done.insert(.hooks) }
         if opensAtLogin { done.insert(.openAtLogin) }
         self.done = done

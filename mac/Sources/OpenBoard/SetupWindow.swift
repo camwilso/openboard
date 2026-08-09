@@ -20,9 +20,15 @@ import SwiftUI
 final class SetupWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
     private let commands: BoardCommands
+    /// Needed for the calibration step: whether the order has been confirmed, and
+    /// whether the pad is open enough to check it.
+    private let board: BoardModel
+    private let setup: SetupState
 
-    init(commands: BoardCommands) {
+    init(commands: BoardCommands, board: BoardModel, setup: SetupState) {
         self.commands = commands
+        self.board = board
+        self.setup = setup
         super.init()
     }
 
@@ -48,6 +54,8 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
 
         let hosting = NSHostingView(
             rootView: SetupSheet()
+                .environmentObject(board)
+                .environmentObject(setup)
                 .environment(\.boardCommands, commands)
                 .tint(SystemColors.selectedRow)
         )

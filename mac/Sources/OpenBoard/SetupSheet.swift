@@ -17,22 +17,16 @@ import SwiftUI
 struct SetupSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.boardCommands) private var commands
+    @EnvironmentObject private var setup: SetupState
+    @EnvironmentObject private var board: BoardModel
 
     @State private var permissions = PermissionProbe.inspect()
-    @State private var hooks = HookInstall.Audit(statuses: [:], settingsExists: false)
     @State private var loginStatus = LoginItem.status
     @State private var note: String?
     @State private var working = false
+    @State private var calibrating = false
 
-    private var progress: SetupProgress {
-        SetupProgress(
-            inputMonitoring: permissions.inputMonitoring,
-            accessibility: permissions.accessibility,
-            systemEvents: permissions.automation["System Events"] ?? .unknown,
-            hooksHealthy: hooks.isHealthy,
-            opensAtLogin: loginStatus.isOn
-        )
-    }
+    private var progress: SetupProgress { setup.progress }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -57,6 +51,7 @@ struct SetupSheet: View {
         // list is what sends someone back to System Settings to fix something they
         // already fixed.
         .onAppear(perform: refresh)
+        .sheet(isPresented: $calibrating, onDismiss: refresh) { CalibrationSheet() }
     }
 
     // MARK: header
@@ -127,6 +122,13 @@ struct SetupSheet: View {
             Button(working ? "Asking" : "Grant") { grantAutomation() }
                 .controlSize(.small)
                 .disabled(working || done)
+        case .calibration:
+            // Needs the pad open, because the check paints six colours on it. Disabled
+            // rather than hidden: it is a real step, and hiding it would make the count
+            // shrink and grow as the pad connects.
+            Button(done ? "Re-check" : "Check") { calibrating = true }
+                .controlSize(.small)
+                .disabled(!board.device.isUsable)
         case .hooks:
             Button(done ? "Re-wire" : "Wire up") { wireHooks() }
                 .controlSize(.small)
@@ -148,6 +150,7 @@ struct SetupSheet: View {
         case .inputMonitoring: "Input Monitoring"
         case .accessibility: "Accessibility"
         case .automation: "Automation"
+        case .calibration: "Key order"
         case .hooks: "Claude Code hooks"
         case .openAtLogin: "Open at login"
         }
@@ -162,6 +165,13 @@ struct SetupSheet: View {
         case .automation:
             "Driving System Events, which the key actions use. OpenBoard asks macOS "
                 + "directly — no trip to System Settings."
+        case .calibration:
+            board.device.isUsable
+                ? "Confirms which physical key is slot 1. The board assumes the order "
+                    + "every pad reports, so this takes ten seconds — but colours and "
+                    + "bindings are set per slot, and an unchecked order puts them on "
+                    + "the wrong keys."
+                : "Connect the pad first — the check paints six colours on it."
         case .hooks:
             "Adds OpenBoard to ~/.claude/settings.json so sessions report what they "
                 + "are doing. Every unrelated setting is preserved and the file is "
@@ -216,21 +226,9 @@ struct SetupSheet: View {
     // MARK: actions
 
     private func refresh() {
+        setup.refresh()
         permissions = PermissionProbe.inspect()
-        hooks = HookInstall.audit(
-            settings: HookInstall.loadSettings(),
-            expectedCommand: HookInstall.hookCommandPath()
-        )
         loginStatus = LoginItem.status
-
-        // System Events sleeps, and a sleeping helper reads as "cannot tell" rather
-        // than as the grant it has. Ask again once it is awake.
-        if permissions.automation["System Events"] == .unavailable {
-            Task {
-                await AutomationRequest.wakeProbeableTargets()
-                permissions = PermissionProbe.inspect()
-            }
-        }
     }
 
     private func openPane(_ pane: String) {
