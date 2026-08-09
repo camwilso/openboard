@@ -589,12 +589,22 @@ struct DisconnectedView: View {
 
             Text(status.headline(name))
                 .font(.system(size: 13.5, weight: .semibold))
-            // The one line that varies, and the only one that says what to do about it.
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            // The part that varies, and the only part that says what to do about it —
+            // so it must never be the part that gets cut.
+            //
+            // `maxWidth` alone truncated it. Inside a fixed-width popover SwiftUI
+            // proposes one line's height and Text obeys, so "check that it is on
+            // Layer 1" — the actual fix, and the least guessable thing this app knows
+            // — became an ellipsis. fixedSize makes it claim the height it needs and
+            // wrap instead.
             Text(status.message)
                 .font(.system(size: 11.5))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 296)
+                .fixedSize(horizontal: false, vertical: true)
 
             Button("Try again") { retry() }
                 .glassButton(prominent: true)
