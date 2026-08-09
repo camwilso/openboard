@@ -777,6 +777,20 @@ func runAgentDetectionTests() {
         // A live check: the fixtures above are my idea of an installation, and this is
         // the machine's.
         let claude = try Harness.require(HarnessDetector.known.first { $0.id == "claude" })
+
+        // The precondition has to be independent of the thing under test, and the
+        // obvious candidate is not: the detector's own homePaths for this agent is
+        // exactly [".claude"], so guarding on that directory would make the assertion
+        // unfailable — present means detected, by construction.
+        //
+        // CLAUDECODE is set by Claude Code in the environment of processes it spawns,
+        // and the detector never reads the environment. So it answers "is Claude Code
+        // running this test" without consulting anything the test is checking.
+        guard ProcessInfo.processInfo.environment["CLAUDECODE"] != nil else {
+            skip("not running under Claude Code, so there is nothing to detect")
+            return
+        }
+
         expect(
             HarnessDetector.isInstalled(claude),
             "Claude Code is running this test and was not detected"

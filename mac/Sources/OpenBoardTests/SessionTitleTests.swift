@@ -13,9 +13,9 @@ func runSessionTitleTests() {
     }
 
     test("the first user message becomes the name") {
-        // Claude Code writes no title into a live transcript — `summary` lines only
-        // appear once a session is compacted or closed — so the opening message is the
-        // only thing available, and it is what a person would call it anyway.
+        // The fallback, for a chat too young to have been named yet. It is what a
+        // person would call it anyway, and a young session still has to be told apart
+        // from the five others in the same repo.
         let jsonl = [
             line(["type": "mode", "sessionId": "a"]),
             line(["type": "file-history-snapshot"]),
@@ -87,6 +87,63 @@ func runSessionTitleTests() {
             line(["type": "user", "message": ["content": "What I asked"]]),
         ].joined(separator: "\n")
         expectEqual(SessionTitle.firstUserMessage(inJSONL: jsonl), "What I asked")
+    }
+
+    /*
+     Claude Code's own name for the session wins.
+
+     It is the same string the VS Code extension renames its tab to, which is the whole
+     point: a row and a tab that read alike can be matched by eye. The opening message
+     describes what a session *was*, and after an hour that is a different subject.
+    */
+    test("an ai-title beats the opening message, and is final") {
+        let jsonl = [
+            line(["type": "user", "message": ["content": "how are we detecting events"]]),
+            line([
+                "type": "ai-title",
+                "aiTitle": "Investigate VS Code event detection",
+                "sessionId": "a",
+            ]),
+        ].joined(separator: "\n")
+
+        expectEqual(SessionTitle.aiTitle(inJSONL: jsonl), "Investigate VS Code event detection")
+        let named = SessionTitle.name(inJSONL: jsonl)
+        expectEqual(named?.name, "Investigate VS Code event detection")
+        expect(named?.settled == true)
+    }
+
+    test("a session named before it was spoken to is still named") {
+        // Order is not assumed: the entry is written when Claude Code has something to
+        // name, which is not tied to where the opening message sits.
+        let jsonl = [
+            line(["type": "ai-title", "aiTitle": "Ship the installer", "sessionId": "a"]),
+            line(["type": "user", "message": ["content": "one line install please"]]),
+        ].joined(separator: "\n")
+        expectEqual(SessionTitle.name(inJSONL: jsonl)?.name, "Ship the installer")
+    }
+
+    test("an unnamed session falls back, and says the name is provisional") {
+        // The flag is what stops the fallback being cached forever — a row would
+        // otherwise keep the opening message for the life of the session.
+        let jsonl = line(["type": "user", "message": ["content": "What I asked"]])
+        let named = SessionTitle.name(inJSONL: jsonl)
+        expectEqual(named?.name, "What I asked")
+        expect(named?.settled == false)
+    }
+
+    test("an empty or malformed ai-title does not stop the scan") {
+        // A blank title must not beat a real message, and it must not swallow a later
+        // good one: `clean` returning nil is a skip, not an answer.
+        let jsonl = [
+            line(["type": "ai-title", "aiTitle": "   ", "sessionId": "a"]),
+            line(["type": "ai-title", "sessionId": "a"]),
+            line(["type": "ai-title", "aiTitle": "The real title", "sessionId": "a"]),
+        ].joined(separator: "\n")
+        expectEqual(SessionTitle.aiTitle(inJSONL: jsonl), "The real title")
+
+        let onlyBlank = line(["type": "ai-title", "aiTitle": "", "sessionId": "a"])
+            + "\n" + line(["type": "user", "message": ["content": "Fallback"]])
+        expectEqual(SessionTitle.name(inJSONL: onlyBlank)?.name, "Fallback")
     }
 
     test("this machine's real transcript yields a name") {

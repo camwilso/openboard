@@ -8,40 +8,103 @@ import Foundation
  which. Two sessions in the same repo are indistinguishable, and that is the common
  case.
 
- The name used is the **first thing you asked for**. Claude Code writes no title into a
- live transcript — `summary` lines only appear once a session is compacted or closed —
- but the opening user message is what a person would call the session anyway, and it
- never changes, so it can be read once and kept.
+ The name used is Claude Code's own: an `ai-title` entry, which is the same string the
+ VS Code extension renames its tab to. So a row in the popover and a tab in the editor
+ read alike, and mapping a key to a chat is a matter of recognising the words rather
+ than counting windows.
+
+ An earlier version used the **first thing you asked for**, on the reasoning that
+ Claude Code writes no title into a *live* transcript and `summary` lines only appear
+ once a session is compacted. That is no longer true — `ai-title` is written from the
+ first turn or two and rewritten as the session goes on — and the opening message was
+ always a poor name for a session that has moved on. It stays as the fallback, because
+ a chat too young to have been named still has to be told apart from five others.
  */
 public enum SessionTitle {
-    /// Read once per transcript. The first user message is immutable, so a cache never
-    /// goes stale — and the popover asks for this on every repaint.
+    /**
+     A name, and whether it can be trusted not to change.
+
+     The distinction is load-bearing. `ai-title` is *settled*: once Claude Code has
+     named a session it rewrites the same line, so that answer can be kept forever and
+     the popover — which asks on every repaint — never reads the file again.
+
+     The opening message is only a **stand-in** until that name exists. Cached with the
+     same finality it would freeze a row on the fallback seconds before the real name
+     lands, and nothing would ever revisit it. So a provisional name is re-read, and
+     only when the file has actually grown: a `stat` per repaint rather than a read.
+     */
+    private struct Cached {
+        let name: String
+        let settled: Bool
+        let size: Int
+    }
+
     /// `nonisolated(unsafe)` with an explicit lock rather than an actor: this is read
     /// during a SwiftUI body evaluation, which cannot await, and the cost of the wrong
     /// answer is a stale row rather than corruption. The lock makes it correct anyway.
-    nonisolated(unsafe) private static var cache: [String: String] = [:]
+    nonisolated(unsafe) private static var cache: [String: Cached] = [:]
     private static let lock = NSLock()
 
     /// Stop after this much of the file.
     ///
     /// A transcript grows without bound, and `file-history-snapshot` entries near the
-    /// top can be enormous. The opening message is within the first few entries or it
-    /// is not worth finding — this runs on the main thread when the popover opens, and
-    /// a 40MB read there is a visible hang.
+    /// top can be enormous. Both names live near the front — the opening message is the
+    /// first few entries, and across real transcripts from 24KB to 7.8MB the first
+    /// `ai-title` landed between 21KB and 25KB in — so this is generous rather than
+    /// tight. It runs on the main thread when the popover opens, and a 40MB read there
+    /// is a visible hang.
     private static let byteBudget = 512 * 1024
 
     public static func forSession(transcriptPath: String?) -> String? {
         guard let transcriptPath, !transcriptPath.isEmpty else { return nil }
+        let size = fileSize(of: transcriptPath)
 
         lock.lock()
-        if let hit = cache[transcriptPath] { lock.unlock(); return hit }
+        if let hit = cache[transcriptPath], hit.settled || hit.size == size {
+            lock.unlock()
+            return hit.name
+        }
         lock.unlock()
 
-        guard let title = readFirstUserMessage(at: transcriptPath) else { return nil }
+        guard let found = name(inJSONL: readHead(of: transcriptPath) ?? "") else { return nil }
         lock.lock()
-        cache[transcriptPath] = title
+        cache[transcriptPath] = Cached(name: found.name, settled: found.settled, size: size)
         lock.unlock()
-        return title
+        return found.name
+    }
+
+    /// What to call this session, and whether the answer is final. Exposed for the
+    /// tests, which parse a fixture rather than a real file.
+    public static func name(inJSONL text: String) -> (name: String, settled: Bool)? {
+        if let title = aiTitle(inJSONL: text) { return (title, true) }
+        if let opening = firstUserMessage(inJSONL: text) { return (opening, false) }
+        return nil
+    }
+
+    /**
+     Claude Code's own name for the session.
+
+     The *first* occurrence is taken, not the last. The line is rewritten as the session
+     goes on, but reading the newest one would mean tailing a file that grows without
+     bound on every repaint, to correct a name that in practice does not change — and
+     the read budget above only reaches the front of the file anyway.
+     */
+    public static func aiTitle(inJSONL text: String) -> String? {
+        for line in text.split(separator: "\n") {
+            guard let data = line.data(using: .utf8),
+                  let entry = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                  entry["type"] as? String == "ai-title",
+                  let raw = entry["aiTitle"] as? String,
+                  let title = clean(raw)
+            else { continue }
+            return title
+        }
+        return nil
+    }
+
+    private static func fileSize(of path: String) -> Int {
+        let attributes = try? FileManager.default.attributesOfItem(atPath: path)
+        return (attributes?[.size] as? NSNumber)?.intValue ?? 0
     }
 
     /// Exposed for the tests, which need to parse a fixture rather than a real file.
@@ -67,7 +130,7 @@ public enum SessionTitle {
         return nil
     }
 
-    private static func readFirstUserMessage(at path: String) -> String? {
+    private static func readHead(of path: String) -> String? {
         guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
         defer { try? handle.close() }
         guard let data = try? handle.read(upToCount: byteBudget), !data.isEmpty else {
@@ -79,7 +142,7 @@ public enum SessionTitle {
         if let lastNewline = text.lastIndex(of: "\n") {
             text = String(text[..<lastNewline])
         }
-        return firstUserMessage(inJSONL: text)
+        return text
     }
 
     /**

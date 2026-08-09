@@ -103,6 +103,15 @@ func runDiagnosticsTests() {
             skip("system_profiler produced nothing")
             return
         }
+        // Skipped on the *text*, never on the verdict. Interpreting a report that has
+        // no pad in it and interpreting one whose format changed both come back
+        // .notPaired, so skipping on the verdict would silence exactly the regression
+        // this exists to catch. Asking whether the device is named anywhere in the
+        // report is a question the parser is not involved in answering.
+        guard DeviceDiagnostics.deviceNames.contains(where: { live.contains($0) }) else {
+            skip("no Codex Micro in this machine's Bluetooth report — nothing to parse")
+            return
+        }
         let presence = DeviceDiagnostics.interpret(live)
         expect(
             presence == .connected || presence == .pairedButAsleep,
