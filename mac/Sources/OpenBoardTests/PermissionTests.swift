@@ -110,3 +110,64 @@ private func isRunning(_ pattern: String) -> Bool {
     output.waitUntilExit()
     return !data.isEmpty
 }
+
+/**
+ Guided setup's arithmetic.
+
+ The counting is the part worth testing. "3 of 4" that stalls at 3 because someone
+ declined a recommended step, or an install that never calls itself ready because an
+ optional toggle is off, both read as the app being broken — and both are one wrong
+ `filter` away.
+*/
+func runSetupProgressTests() {
+
+    test("a fresh install has nothing done and knows where to start") {
+        let progress = SetupProgress(
+            inputMonitoring: .denied, accessibility: .denied,
+            systemEvents: .unknown, hooksHealthy: false, opensAtLogin: false
+        )
+        expect(!progress.isReady)
+        expectEqual(progress.requiredDone, 0)
+        expectEqual(progress.requiredTotal, 4)
+        expectEqual(progress.next, .inputMonitoring)
+    }
+
+    test("recommended steps do not count toward the total") {
+        // The whole point: an install is finished when it works, whatever the user
+        // decided about launching at login.
+        let progress = SetupProgress(
+            inputMonitoring: .granted, accessibility: .granted,
+            systemEvents: .granted, hooksHealthy: true, opensAtLogin: false
+        )
+        expect(progress.isReady)
+        expectEqual(progress.requiredDone, 4)
+        expectEqual(progress.requiredTotal, 4)
+        expect(progress.next == nil)
+    }
+
+    test("next skips what is already done") {
+        let progress = SetupProgress(
+            inputMonitoring: .granted, accessibility: .granted,
+            systemEvents: .unknown, hooksHealthy: false, opensAtLogin: true
+        )
+        expectEqual(progress.next, .automation)
+        expectEqual(progress.requiredDone, 2)
+    }
+
+    test("an unavailable automation target is not a grant") {
+        // System Events asleep reads as `unavailable`, which is "cannot tell" and must
+        // not be counted as done — the setup list would tick a box for a permission
+        // nobody has confirmed.
+        let progress = SetupProgress(
+            inputMonitoring: .granted, accessibility: .granted,
+            systemEvents: .unavailable, hooksHealthy: true, opensAtLogin: false
+        )
+        expect(!progress.isReady)
+        expectEqual(progress.next, .automation)
+    }
+
+    test("only Input Monitoring and Accessibility need a restart") {
+        let needRestart = SetupProgress.Step.allCases.filter(\.needsRestart)
+        expectEqual(Set(needRestart), Set([.inputMonitoring, .accessibility]))
+    }
+}

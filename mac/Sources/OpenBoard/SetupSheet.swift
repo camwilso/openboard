@@ -1,0 +1,290 @@
+import AppKit
+import OpenBoardKit
+import SwiftUI
+
+/**
+ Guided setup — the four things that have to be true before anything lights.
+
+ A checklist rather than a wizard, and that is forced by the platform: granting Input
+ Monitoring only takes effect after OpenBoard restarts, so a linear flow would be killed
+ by its own first step. This recomputes from the world every time it appears, which
+ means quitting halfway and coming back lands where you left off.
+
+ The pad itself is not in the list. Pairing and Layer 1 are things done on the hardware,
+ neither is detectable from here, and an unticked box for something that is probably
+ fine is worse than a sentence. They are stated at the bottom instead.
+ */
+struct SetupSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.boardCommands) private var commands
+
+    @State private var permissions = PermissionProbe.inspect()
+    @State private var hooks = HookInstall.Audit(statuses: [:], settingsExists: false)
+    @State private var loginStatus = LoginItem.status
+    @State private var note: String?
+    @State private var working = false
+
+    private var progress: SetupProgress {
+        SetupProgress(
+            inputMonitoring: permissions.inputMonitoring,
+            accessibility: permissions.accessibility,
+            systemEvents: permissions.automation["System Events"] ?? .unknown,
+            hooksHealthy: hooks.isHealthy,
+            opensAtLogin: loginStatus.isOn
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header
+            Divider()
+
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(SetupProgress.Step.allCases, id: \.self) { step in
+                    row(step)
+                    if step != SetupProgress.Step.allCases.last {
+                        Divider().opacity(0.35)
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+
+            Divider()
+            footer
+        }
+        .frame(width: 520)
+        // Re-read on every appearance: these are granted outside the app, and a stale
+        // list is what sends someone back to System Settings to fix something they
+        // already fixed.
+        .onAppear(perform: refresh)
+    }
+
+    // MARK: header
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(progress.isReady ? "OpenBoard is ready" : "Set up OpenBoard")
+                .font(.system(size: 16, weight: .semibold))
+            Text(progress.isReady
+                 ? "Everything it needs is granted. Open a new Claude Code session and the keys will light."
+                 : "\(progress.requiredDone) of \(progress.requiredTotal) done. "
+                   + "Each takes a few seconds, and you can stop and come back.")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(20)
+    }
+
+    // MARK: rows
+
+    private func row(_ step: SetupProgress.Step) -> some View {
+        let done = progress.isDone(step)
+        return HStack(alignment: .top, spacing: 12) {
+            Image(systemName: done ? "checkmark.circle.fill" : "circle")
+                .font(.system(size: 15))
+                .foregroundStyle(done ? Color(RGB(0x09B821)) : Color.secondary.opacity(0.5))
+                .padding(.top, 1)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(title(step)).font(.system(size: 13, weight: .medium))
+                    if !step.isRequired {
+                        Text("optional")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                Text(detail(step))
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                // Said on the row rather than in a dialog afterwards, because it is the
+                // reason a grant looks like it did nothing.
+                if step.needsRestart && !done {
+                    Text("Takes effect after OpenBoard restarts.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color(RGB(0xFF6A00)))
+                }
+            }
+
+            Spacer(minLength: 8)
+            action(step, done: done)
+        }
+        .padding(.vertical, 12)
+    }
+
+    @ViewBuilder
+    private func action(_ step: SetupProgress.Step, done: Bool) -> some View {
+        switch step {
+        case .inputMonitoring:
+            Button("Open") { openPane("Privacy_ListenEvent") }.controlSize(.small)
+        case .accessibility:
+            Button("Open") { openPane("Privacy_Accessibility") }.controlSize(.small)
+        case .automation:
+            // The only one the app can grant without sending anyone anywhere.
+            Button(working ? "Asking" : "Grant") { grantAutomation() }
+                .controlSize(.small)
+                .disabled(working || done)
+        case .hooks:
+            Button(done ? "Re-wire" : "Wire up") { wireHooks() }
+                .controlSize(.small)
+                .disabled(working)
+        case .openAtLogin:
+            Toggle("", isOn: Binding(
+                get: { loginStatus.isOn },
+                set: { setLogin($0) }
+            ))
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .labelsHidden()
+            .disabled(!LoginItem.isInstalledProperly)
+        }
+    }
+
+    private func title(_ step: SetupProgress.Step) -> String {
+        switch step {
+        case .inputMonitoring: "Input Monitoring"
+        case .accessibility: "Accessibility"
+        case .automation: "Automation"
+        case .hooks: "Claude Code hooks"
+        case .openAtLogin: "Open at login"
+        }
+    }
+
+    private func detail(_ step: SetupProgress.Step) -> String {
+        switch step {
+        case .inputMonitoring:
+            "Reading the pad. Without it nothing lights and no key press is seen."
+        case .accessibility:
+            "Typing snippets, sending ⏎ and ⎋, and scrolling with the dial."
+        case .automation:
+            "Driving System Events, which the key actions use. OpenBoard asks macOS "
+                + "directly — no trip to System Settings."
+        case .hooks:
+            "Adds OpenBoard to ~/.claude/settings.json so sessions report what they "
+                + "are doing. Every unrelated setting is preserved and the file is "
+                + "backed up first."
+        case .openAtLogin:
+            "A board you have to remember to launch is not an ambient board."
+        }
+    }
+
+    // MARK: footer
+
+    private var footer: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let note {
+                Text(note)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            // Two things this cannot check, and both are on the hardware. Stated rather
+            // than shown as boxes that would sit unticked forever.
+            VStack(alignment: .leading, spacing: 3) {
+                Text("On the pad itself")
+                    .font(.system(size: 11.5, weight: .medium))
+                Text("Pair the Codex Micro with this Mac over Bluetooth or USB, and keep "
+                     + "it on Layer 1 — per-key status renders only there.")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(spacing: 8) {
+                Button("Check again", action: refresh)
+                    .controlSize(.small)
+                Spacer(minLength: 0)
+                if !progress.isReady {
+                    // Offered here because two of the four need it, and hunting for the
+                    // menu bar item to quit and reopen is a poor reward for granting a
+                    // permission correctly.
+                    Button("Restart OpenBoard", action: restart)
+                        .controlSize(.small)
+                }
+                Button(progress.isReady ? "Done" : "Close") { dismiss() }
+                    .controlSize(.small)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+    }
+
+    // MARK: actions
+
+    private func refresh() {
+        permissions = PermissionProbe.inspect()
+        hooks = HookInstall.audit(
+            settings: HookInstall.loadSettings(),
+            expectedCommand: HookInstall.hookCommandPath()
+        )
+        loginStatus = LoginItem.status
+
+        // System Events sleeps, and a sleeping helper reads as "cannot tell" rather
+        // than as the grant it has. Ask again once it is awake.
+        if permissions.automation["System Events"] == .unavailable {
+            Task {
+                await AutomationRequest.wakeProbeableTargets()
+                permissions = PermissionProbe.inspect()
+            }
+        }
+    }
+
+    private func openPane(_ pane: String) {
+        guard let url = PermissionProbe.settingsURL(forPane: pane) else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    private func grantAutomation() {
+        working = true
+        note = nil
+        Task {
+            _ = await AutomationRequest.requestAll(current: permissions.automation)
+            working = false
+            refresh()
+            if permissions.automation["System Events"]?.isGranted != true {
+                note = "System Events was not granted. Turn it on in System Settings → "
+                    + "Privacy & Security → Automation → OpenBoard."
+            }
+        }
+    }
+
+    private func wireHooks() {
+        do {
+            try HookInstall.install(command: HookInstall.hookCommandPath())
+            note = "Hooks wired. Open a new Claude Code session to see it — they load "
+                + "when a session starts, so ones already running will not light."
+        } catch {
+            note = error.localizedDescription
+        }
+        refresh()
+    }
+
+    private func setLogin(_ on: Bool) {
+        switch LoginItem.set(on) {
+        case let .success(status):
+            loginStatus = status
+            note = nil
+        case let .failure(error):
+            note = error.localizedDescription
+            loginStatus = LoginItem.status
+        }
+    }
+
+    /// Relaunch, because Input Monitoring and Accessibility are read at launch.
+    ///
+    /// A detached `open` after this process exits, rather than asking macOS to restart
+    /// us: an app that terminates itself and expects something to notice is an app that
+    /// does not come back.
+    private func restart() {
+        let path = Bundle.main.bundlePath
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/sh")
+        task.arguments = ["-c", "sleep 1; open \"\(path)\""]
+        try? task.run()
+        NSApplication.shared.terminate(nil)
+    }
+}

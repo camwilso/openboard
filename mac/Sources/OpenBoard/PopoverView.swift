@@ -38,7 +38,15 @@ struct PopoverView: View {
                     actionKeys
                 }
             } else {
-                DisconnectedView(status: board.device, name: board.deviceName, retry: { commands.sync() })
+                DisconnectedView(
+                    status: board.device,
+                    name: board.deviceName,
+                    retry: { commands.sync() },
+                    startSetup: {
+                        commands.dismissMenu()
+                        commands.openSetup()
+                    }
+                )
             }
 
             Divider().opacity(0.6)
@@ -576,6 +584,7 @@ struct DisconnectedView: View {
     let status: DeviceStatus
     var name: String = "Codex Micro"
     var retry: () -> Void = {}
+    var startSetup: () -> Void = {}
 
     var body: some View {
         VStack(spacing: 9) {
@@ -606,9 +615,14 @@ struct DisconnectedView: View {
                 .frame(maxWidth: 296)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Button("Try again") { retry() }
-                .glassButton(prominent: true)
-                .padding(.top, 3)
+            // A permission is not fixed by asking again. Retrying puts the same
+            // question to macOS and gets the same answer, so for that case the button
+            // has to lead somewhere the answer can change.
+            Button(status.needsSetup ? "Start setup" : "Try again") {
+                if status.needsSetup { startSetup() } else { retry() }
+            }
+            .glassButton(prominent: true)
+            .padding(.top, 3)
         }
         .padding(.horizontal, 14)
         .padding(.top, 16)

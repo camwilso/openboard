@@ -79,6 +79,10 @@ struct BoardCommands: Sendable {
     var release: @MainActor (Int) -> Void = { _ in }
     /// Open the settings window, or bring it forward.
     var openSettings: @MainActor () -> Void = {}
+    /// Open guided setup. Separate from openSettings because the popover offers it
+    /// when nothing works yet, and dropping someone into a settings window at that
+    /// moment is handing them a control panel instead of an answer.
+    var openSetup: @MainActor () -> Void = {}
     /// Close the dropdown. Only ever called from a row *inside* it — the underlying
     /// click is a toggle, so calling it with nothing showing opens the menu instead.
     var dismissMenu: @MainActor () -> Void = {}
@@ -155,6 +159,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// The settings window, kept alive across opens so it remembers where it was.
     private(set) var mainWindow: MainWindowController?
+    /// Guided setup. Also kept, so closing and reopening does not lose the position.
+    private(set) var setupWindow: SetupWindowController?
 
     /**
      Everything the UI can ask for, in one place.
@@ -190,6 +196,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         playCountdown: { [weak self] in self?.controller?.playCountdown() },
         release: { [weak self] slot in self?.controller?.release(slot: slot) },
         openSettings: { [weak self] in self?.showMainWindow() },
+        openSetup: { [weak self] in self?.showSetup() },
         dismissMenu: { [weak self] in self?.controller?.dismissMenuBarPopover() },
         canUpdate: Updater.isAvailable,
         checkForUpdates: { [weak self] in self?.updater.checkForUpdates() },
@@ -197,6 +204,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         automaticUpdates: { [weak self] in self?.updater.automaticallyChecks ?? false },
         setAutomaticUpdates: { [weak self] on in self?.updater.automaticallyChecks = on }
     )
+
+    /**
+     Guided setup, in its own window.
+
+     A window rather than a sheet on the settings window, because the popover offers it
+     when the settings window does not exist — and opening a whole control panel just to
+     hang a sheet on it is a lot of furniture for four checkboxes.
+     */
+    @objc func showSetup() {
+        if setupWindow == nil {
+            setupWindow = SetupWindowController(commands: commands)
+        }
+        setupWindow?.show()
+    }
 
     @objc func showMainWindow() {
         if mainWindow == nil {

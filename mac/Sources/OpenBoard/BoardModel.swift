@@ -238,6 +238,15 @@ enum DeviceStatus: Equatable {
 
     var isUsable: Bool { self == .ready }
 
+    /// Whether this is something guided setup can fix, rather than something about the
+    /// hardware. "Try again" is the wrong offer for a missing permission — retrying
+    /// asks macOS the same question and gets the same answer, so the button has to send
+    /// people somewhere that changes it.
+    var needsSetup: Bool {
+        if case .permissionDenied = self { return true }
+        return false
+    }
+
     /// - Parameter name: what the user calls this pad. Threaded in rather than read
     ///   here, because a status enum has no business knowing about preferences.
     func headline(_ name: String = "Codex Micro") -> String {
