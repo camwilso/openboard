@@ -43,6 +43,32 @@ SOFTWARE.
 
 ---
 
+## Sparkle
+
+`Sparkle.framework` is embedded in `OpenBoard.app` and therefore redistributed with it.
+It is what installs updates in place, which is the only way the app keeps its permissions
+across a version change.
+
+| | |
+|---|---|
+| Source | https://github.com/sparkle-project/Sparkle |
+| Version | 2.9.5 |
+| Licence | MIT, with one BSD-2-Clause component |
+
+Copyright © 2006–2013 Andy Matuschak, © 2009–2013 Elgato Systems GmbH,
+© 2011–2014 Kornel Lesiński, © 2015–2017 Mayur Pawashe, © 2014 C.W. Betts,
+© 2014 Petroules Corporation, © 2014 Big Nerd Ranch. All rights reserved.
+
+Sparkle also contains `bspatch.c` and `bsdiff.c` from bsdiff 4.3, © 2003–2005 Colin
+Percival, under BSD-2-Clause.
+
+The full text of both ships inside the framework at
+`Sparkle.framework/Versions/B/Resources/`, and is at
+[the project's LICENSE](https://github.com/sparkle-project/Sparkle/blob/2.9.5/LICENSE).
+
+Unmodified. The framework is copied into the bundle as published, with the sandbox-only
+XPC services and the build-time headers removed — nothing is patched.
+
 ## Not redistributed
 
 The native `node-hid` binding is **loaded at runtime** from Work Louder Input or the ChatGPT desktop
