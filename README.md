@@ -7,8 +7,8 @@ is blocked waiting on you.
 By **Cam Wilson** — [openboardapp.com](https://openboardapp.com) · MIT licensed.
 
 <p align="center">
-  <img src="assets/popover.png" width="380"
-       alt="The menu bar popover: four live sessions, two waiting on a permission prompt">
+  <img src="assets/hero.jpg" width="820"
+       alt="A Codex Micro beside a MacBook, its keys lit green, blue and amber for different sessions">
 </p>
 
 > [!NOTE]
@@ -59,6 +59,11 @@ notification.
 
 Failures get a different *shape*, not just a different colour: peripheral vision reads
 motion before hue, so a failure must never be mistakable for a completion.
+
+<p align="center">
+  <img src="assets/ring.jpg" width="820"
+       alt="The pad's outer ring lit green, mid-lap, after a session finished">
+</p>
 
 ## How keys are assigned
 
@@ -121,6 +126,11 @@ keys light. Sessions already running get a key immediately but will not report u
 restart.
 
 ## Using it
+
+<p align="center">
+  <img src="assets/popover.png" width="380"
+       alt="The menu bar popover: four live sessions, two waiting on a permission prompt">
+</p>
 
 **Press an Agent key** to jump to that chat. In Terminal it finds the exact tab; in VS
 Code it reveals the panel already holding that conversation. Nothing is ever *opened* by

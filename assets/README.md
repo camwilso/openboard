@@ -2,14 +2,19 @@
 
 Three of these are captured; the fourth needs a camera.
 
-| File | State | What |
-|---|---|---|
-| `popover.png` | done | The menu bar popover — four live sessions, two waiting |
-| `setup.png` | done | Guided setup, three of five complete |
-| `settings.png` | done | Settings → Board, mapping what each key does |
-| `hero.png` | **wanted** | A photo of the pad on a desk, keys lit. Not referenced by the README yet, so nothing breaks without it |
+| File | What |
+|---|---|
+| `hero.jpg` | The pad beside a MacBook, keys lit in different states — the README's lead |
+| `ring.jpg` | The outer ring mid-lap after a session finished |
+| `popover.png` | The menu bar popover — four live sessions, two waiting |
+| `setup.png` | Guided setup, three of five complete |
+| `settings.png` | Settings → Board, mapping what each key does |
 
-## How the three were taken
+The two photos are JPEG and the three captures are PNG, deliberately. A photograph as
+PNG is several megabytes for no visible gain; a UI capture as JPEG smears text. Both were
+resized to 1800px wide, which is 2x what GitHub renders and keeps the folder under 2MB.
+
+## How the captures were taken
 
 Not with `⌘⇧4`. A window grabbed with `screencapture -l<id>` has no backdrop, and the
 app's Liquid Glass samples what is behind it — so the popover came out flat grey, which
