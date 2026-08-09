@@ -78,6 +78,18 @@ struct BoardCommands: Sendable {
     /// Close the dropdown. Only ever called from a row *inside* it — the underlying
     /// click is a toggle, so calling it with nothing showing opens the menu instead.
     var dismissMenu: @MainActor () -> Void = {}
+
+    /// Whether this build can update itself. False in a local build, which has no
+    /// feed signing key — see Updater. The UI asks rather than offering a button that
+    /// would fail with a signature error nobody can act on.
+    var canUpdate: Bool = false
+    /// Check now, because someone clicked.
+    var checkForUpdates: @MainActor () -> Void = {}
+    /// Sparkle's background-check preference, read and written through Sparkle rather
+    /// than mirrored into our own config — it already persists the answer, and two
+    /// copies of one setting is one copy too many.
+    var automaticUpdates: @MainActor () -> Bool = { false }
+    var setAutomaticUpdates: @MainActor (Bool) -> Void = { _ in }
 }
 
 private struct BoardCommandsKey: EnvironmentKey {
@@ -129,6 +141,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     lazy var board = BoardModel()
     let battery = BatteryMonitor()
+    /// Starts its own scheduled check in `init` when the build has a feed key, so it
+    /// is constructed here rather than on first use — an updater nobody opens Settings
+    /// to see is still the one that has to notice a release.
+    let updater = Updater()
     private(set) var controller: BoardController?
 
     /// The settings window, kept alive across opens so it remembers where it was.
@@ -168,8 +184,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         playCountdown: { [weak self] in self?.controller?.playCountdown() },
         release: { [weak self] slot in self?.controller?.release(slot: slot) },
         openSettings: { [weak self] in self?.showMainWindow() },
-        dismissMenu: { [weak self] in self?.controller?.dismissMenuBarPopover() }
-
+        dismissMenu: { [weak self] in self?.controller?.dismissMenuBarPopover() },
+        canUpdate: Updater.isAvailable,
+        checkForUpdates: { [weak self] in self?.updater.checkForUpdates() },
+        automaticUpdates: { [weak self] in self?.updater.automaticallyChecks ?? false },
+        setAutomaticUpdates: { [weak self] on in self?.updater.automaticallyChecks = on }
     )
 
     @objc func showMainWindow() {

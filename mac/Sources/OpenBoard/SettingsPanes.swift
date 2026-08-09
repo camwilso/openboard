@@ -211,13 +211,17 @@ struct DevicePane: View {
     }
 
     /**
-     Which build this is.
+     Which build this is, and how to get a newer one.
 
-     There is no auto-update and no About window, so without this the only way to answer
-     "what version are you on?" is to inspect the bundle's Info.plist from a terminal —
-     which is a poor first question to ask someone reporting a bug.
+     There is no About window, so without this the only way to answer "what version are
+     you on?" is to inspect the bundle's Info.plist from a terminal — which is a poor
+     first question to ask someone reporting a bug.
 
      Selectable, because the point is to paste it into an issue.
+
+     The Check button is hidden rather than disabled in a build that cannot update. A
+     disabled control is a promise that something would happen if only you were allowed;
+     a local build will never have an update feed, so there is nothing to promise.
      */
     private var versionRow: some View {
         let info = Bundle.main.infoDictionary
@@ -232,6 +236,16 @@ struct DevicePane: View {
                 .textSelection(.enabled)
                 .foregroundStyle(.secondary)
             Spacer(minLength: 0)
+            if commands.canUpdate {
+                Toggle("Check automatically", isOn: Binding(
+                    get: { commands.automaticUpdates() },
+                    set: { commands.setAutomaticUpdates($0) }
+                ))
+                .toggleStyle(.checkbox)
+                .font(.system(size: 11.5))
+                Button("Check Now") { commands.checkForUpdates() }
+                    .controlSize(.small)
+            }
         }
     }
 

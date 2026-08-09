@@ -1,0 +1,155 @@
+# Cut a release when a version tag is pushed.
+#
+#   git tag v0.2.0 && git push origin v0.2.0
+#
+# Everything here can be done by hand with mac/tools/release.sh. It is in CI because
+# the by-hand path needs a Developer ID certificate, notary credentials and a Sparkle
+# private key all present on one machine — which is fine until that machine is the only
+# one that can ship, and it always becomes the only one that can ship.
+#
+# ## Secrets this needs
+#
+#   MACOS_CERTIFICATE       base64 of the Developer ID Application .p12
+#                           base64 -i cert.p12 | pbcopy
+#   MACOS_CERTIFICATE_PWD   the password set when exporting that .p12
+#   KEYCHAIN_PASSWORD       any string; names the throwaway keychain this job builds
+#   NOTARY_APPLE_ID         the Apple ID on the developer account
+#   NOTARY_TEAM_ID          the 10-character team id
+#   NOTARY_PASSWORD         an app-specific password from appleid.apple.com,
+#                           NOT the Apple ID password
+#   SPARKLE_PRIVATE_KEY     the EdDSA private key from `generate_keys -x`
+#
+# The Sparkle *public* key is committed in mac/tools/build-app.sh; only the private
+# half is a secret.
+
+name: Release
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    # Not macos-latest: a runner image change should never be what breaks a release.
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # release.sh derives CFBundleVersion from the commit count, and the default
+          # shallow clone makes that number wrong — and wrong in the direction that
+          # makes Sparkle treat a new release as older than what is installed.
+          fetch-depth: 0
+
+      - name: Cache SwiftPM
+        uses: actions/cache@v4
+        with:
+          path: mac/.build
+          key: spm-${{ runner.os }}-${{ hashFiles('mac/Package.resolved', 'mac/Package.swift') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      # Sparkle's tools come down with the package, and release.sh looks for
+      # sign_update inside .build/artifacts. Resolving first also fails fast on a
+      # dependency problem, before any signing setup has happened.
+      - name: Resolve dependencies
+        working-directory: mac
+        run: swift package resolve
+
+      # A dedicated keychain rather than the runner's login keychain: it is deleted at
+      # the end of the job whatever happens, so a cancelled run cannot leave a signing
+      # identity behind on a shared image.
+      - name: Import signing certificate
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/openboard-signing.keychain-db"
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          # Without this the keychain relocks on a timer mid-build and codesign starts
+          # failing partway through with an unhelpful "User interaction is not allowed".
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" \
+            -P "$MACOS_CERTIFICATE_PWD" -T /usr/bin/codesign -T /usr/bin/security
+          # Lets codesign use the key without a GUI prompt there is nobody to answer.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychain -d user -s "$KEYCHAIN" login.keychain-db
+
+          rm -f "$RUNNER_TEMP/cert.p12"
+          echo "OB_IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN" \
+            | grep 'Developer ID Application' | head -1 | awk '{print $2}')" >> "$GITHUB_ENV"
+          echo "SIGNING_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+
+      - name: Store notary credentials
+        env:
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+        run: |
+          xcrun notarytool store-credentials openboard-notary \
+            --apple-id "$NOTARY_APPLE_ID" \
+            --team-id "$NOTARY_TEAM_ID" \
+            --password "$NOTARY_PASSWORD" \
+            --keychain "$SIGNING_KEYCHAIN"
+
+      - name: Build, sign, notarize
+        run: mac/tools/release.sh
+
+      # Before the appcast, so the feed never advertises a download that is not there
+      # yet. The other order gives Sparkle a window in which it finds an update, fails
+      # to fetch it, and shows the user an error for a release that was fine.
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          gh release create "$GITHUB_REF_NAME" \
+            "mac/dist/OpenBoard-$VERSION.zip" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes
+
+      # The key is written to a file rather than passed on a command line, where it
+      # would be visible in the process table to anything else on the runner.
+      - name: Sign and publish the appcast (Cloudflare Pages deploys the branch)
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          KEYFILE="$RUNNER_TEMP/sparkle_key"
+          # trap rather than a trailing rm: `set -e` means a failure inside appcast.sh
+          # exits this step immediately, skipping any cleanup written after it and
+          # leaving the signing key on disk. The runner is ephemeral so the practical
+          # exposure is small, but "the key is deleted unless something goes wrong" is
+          # exactly backwards.
+          trap 'rm -f "$KEYFILE"' EXIT
+          printf '%s' "$SPARKLE_PRIVATE_KEY" > "$KEYFILE"
+          chmod 600 "$KEYFILE"
+          OB_SPARKLE_KEY_FILE="$KEYFILE" mac/tools/appcast.sh
+
+          git push origin feed
+
+      - name: Report the cask checksum
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "### Homebrew cask" >> "$GITHUB_STEP_SUMMARY"
+          echo '```ruby' >> "$GITHUB_STEP_SUMMARY"
+          echo "  version \"$VERSION\"" >> "$GITHUB_STEP_SUMMARY"
+          echo "  sha256 \"$(cat mac/dist/OpenBoard-$VERSION.sha256)\"" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Clean up the keychain
+        if: always()
+        run: security delete-keychain "$SIGNING_KEYCHAIN" || true

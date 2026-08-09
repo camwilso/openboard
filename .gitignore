@@ -19,6 +19,24 @@ the-final-countdown/*.wav
 mac/.build/
 mac/dist/
 
+# The feed worktree tools/appcast.sh checks out to publish the Sparkle appcast. It is
+# a real checkout of another branch, not content of this one.
+.feed/
+
+# Credentials, belt and braces. Nothing here is *supposed* to hold a key — the signing
+# identity, the Sparkle key and the notary password all live in the login keychain, and
+# the release scripts read them from there rather than from a file. This is insurance
+# against the one afternoon someone exports a .p12 into the repo to debug something and
+# then commits it, which in a public repo is not recoverable by deleting the file.
+*.p12
+*.pem
+*.key
+*.cer
+*.certSigningRequest
+.env
+.env.*
+secrets.json
+
 # Working notes. Kept locally rather than published: they are a record of what was
 # tried on this hardware, not documentation anybody should have to read.
 docs/
