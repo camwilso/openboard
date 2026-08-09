@@ -113,7 +113,7 @@ struct DevicePane: View {
                      targets have answered the button is not a control, it is a leftover.
                      */
                     if !automationSettled {
-                        Button(requestingAutomation ? "Asking…" : "Grant automation…") {
+                        Button(requestingAutomation ? "Asking…" : "Grant permissions") {
                             requestAutomation()
                         }
                         .controlSize(.small)
