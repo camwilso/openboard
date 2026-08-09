@@ -48,16 +48,18 @@ cask "openboard" do
   ]
 
   caveats <<~EOS
-    OpenBoard runs in the menu bar. Open it once, then:
+    Open OpenBoard and it will walk you through setup — permissions, key order,
+    and the Claude Code hooks. It has no Dock icon; it lives in the menu bar.
 
-      1. Grant Input Monitoring and Accessibility in Settings → Device.
-         Both are per-application and only take effect after the app restarts.
-      2. Wire the hooks in Settings → Device → Hooks. Without them the pad
-         connects and nothing ever lights.
-      3. Keep the pad on Layer 1 — per-key status renders only there.
+    Two things it cannot do for you, both on the pad itself:
+      · pair the Codex Micro with this Mac, over Bluetooth or USB
+      · keep it on Layer 1 — per-key status renders only there
 
-    Before uninstalling, remove the hooks from the same screen. Deleting the app
-    without doing that leaves eight hook entries in ~/.claude/settings.json pointing
-    at a binary that is gone, and every Claude Code session will try to run it.
+    Hooks are read when a Claude Code session starts, so open a new one to see
+    the keys light. Sessions already running will not report until they restart.
+
+    Before uninstalling, turn the hooks off in Settings → Device. Deleting the app
+    without doing that leaves eight entries in ~/.claude/settings.json pointing at
+    a binary that is gone, and every session will try to run it on every event.
   EOS
 end

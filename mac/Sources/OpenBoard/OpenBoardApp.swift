@@ -141,7 +141,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
      First access is from the scene body, long after the delegate exists.
      */
+    /**
+     Nothing has ever run here before.
+
+     Read in `init`, and it has to be: the answer is "does the config file exist", and
+     constructing `board` writes one. A moment later this is false for every install,
+     including the one that has never been set up.
+     */
+    let isFirstLaunch: Bool
+
     override init() {
+        isFirstLaunch = !FileManager.default.fileExists(atPath: PreferencesStore.url().path)
         AppPaths.migrateIfNeeded().forEach { name in
             Log.write("migrated \(name) out of ~/.claude/openboard")
         }
@@ -244,6 +254,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller = created
         created.start()
         battery.start()
+
+        /*
+         Open setup on the very first launch, and only then.
+
+         The app is `.accessory`: no Dock icon, no window, nothing in the app switcher.
+         So a first run looked exactly like a failed one — you double-click the app you
+         just downloaded and the only evidence it worked is a new icon among the twenty
+         already in your menu bar. Every later step was discoverable; this one asked you
+         to guess that anything had happened at all.
+
+         Once only. An install that is *unfinished* already says so in the popover, and
+         a window that reopens every launch until you comply is a nag rather than a
+         welcome — someone who chose to defer has made a decision worth respecting.
+        */
+        if isFirstLaunch {
+            Log.write("setup: first launch — opening setup")
+            showSetup()
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
