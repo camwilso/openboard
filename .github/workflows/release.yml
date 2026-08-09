@@ -111,6 +111,18 @@ jobs:
             --password "$NOTARY_PASSWORD" \
             --keychain "$SIGNING_KEYCHAIN"
 
+      # release.sh refuses to build from a tag that is not on main, because the build
+      # number is the commit count reachable from the tag — a tag on a side branch can
+      # produce a number lower than a published release, and Sparkle would then treat
+      # the new version as older than what users already have.
+      #
+      # That check needs origin/main to exist, and a tag push checks out a *detached*
+      # HEAD. Fetching it explicitly rather than trusting fetch-depth: 0 to have set up
+      # the remote-tracking ref, because the failure mode is a release that dies at
+      # preflight having already consumed the tag.
+      - name: Make main reachable for the preflight check
+        run: git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+
       - name: Build, sign, notarize
         run: mac/tools/release.sh
 
