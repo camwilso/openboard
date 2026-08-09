@@ -68,7 +68,8 @@ struct DevicePane: View {
                             "Automation → \(target.name)", why(automating: target.name),
                             status: permissions.automation[target.name] ?? .unknown,
                             pane: "Privacy_Automation",
-                            subject: target.name
+                            subject: target.name,
+                            optional: target.optional
                         )
                     }
                 }
@@ -98,14 +99,18 @@ struct DevicePane: View {
 
                      The other three send you to System Settings because that is where
                      they are granted. Automation is not: it has no "request access"
-                     API, macOS asks when something tries to drive the target, and the
-                     targets here are not running — System Events is launch-on-demand
-                     and nobody leaves QuickTime open. So both rows sat at "not running"
-                     with an Open button leading to a pane where OpenBoard was not yet
-                     listed, because it had never asked for anything.
+                     API, macOS asks when something tries to drive the target, and
+                     System Events — the one the key actions need — is a launch-on-demand
+                     helper that is asleep most of the time. So its row sat at "not
+                     running" beside an Open button leading to a pane where OpenBoard was
+                     not yet listed, because it had never asked for anything.
 
-                     Shown only while there is something to ask for. Once both are
-                     granted the button is not a control, it is a leftover.
+                     QuickTime is not in this. It prompts itself the first time fun mode
+                     opens the video, which is the better moment — the user has just
+                     asked for the thing the dialog is about.
+
+                     Shown only while there is something to ask for. Once the required
+                     targets have answered the button is not a control, it is a leftover.
                      */
                     if !automationSettled {
                         Button(requestingAutomation ? "Asking…" : "Grant automation…") {
@@ -113,9 +118,9 @@ struct DevicePane: View {
                         }
                         .controlSize(.small)
                         .disabled(requestingAutomation)
-                        .help("Asks macOS for permission to drive System Events and "
-                            + "QuickTime Player. Each is briefly started so macOS has "
-                            + "something to ask about, then closed again.")
+                        .help("Asks macOS for permission to drive System Events, which "
+                            + "the key actions need. QuickTime is not included — fun "
+                            + "mode asks for that itself the first time you play it.")
                     }
 
                     if !permissions.missing.isEmpty {
@@ -229,14 +234,25 @@ struct DevicePane: View {
         }
     }
 
-    /// Nothing left to ask about — every automation target has answered, one way or
-    /// another. A denial counts as settled: macOS will not re-prompt once someone has
-    /// said no, and only System Settings can undo it.
+    /**
+     Nothing left to ask about.
+
+     Optional targets do not count. QuickTime Player prompts itself the first time fun
+     mode runs, so it is never something this button could obtain — leaving it in the
+     sum meant the button stayed on screen forever, offering to do a thing it would then
+     skip.
+
+     A denial counts as settled: macOS will not re-prompt once someone has said no, and
+     only System Settings can undo it. `unavailable` does not — that is a target asleep
+     rather than an answer, and `refresh()` wakes it before this is read.
+     */
     private var automationSettled: Bool {
-        PermissionProbe.automationTargets.allSatisfy { target in
-            let status = permissions.automation[target.name] ?? .unknown
-            return status == .granted || status == .denied
-        }
+        PermissionProbe.automationTargets
+            .filter { !$0.optional }
+            .allSatisfy { target in
+                let status = permissions.automation[target.name] ?? .unknown
+                return status == .granted || status == .denied
+            }
     }
 
     /**
@@ -254,14 +270,22 @@ struct DevicePane: View {
     private func requestAutomation() {
         requestingAutomation = true
         automationNote = nil
+        // Captured before, so the summary can report what this click *did* rather than
+        // what happens to be true afterwards. Listing everything currently granted read
+        // as "I just granted these three" when all three were already on — taking
+        // credit for work it did not do, and leaving the real answer ("nothing needed
+        // asking") unsaid.
+        let before = permissions.automation
+
         Task {
-            let results = await AutomationRequest.requestAll(current: permissions.automation)
+            let results = await AutomationRequest.requestAll(current: before)
             permissions = PermissionProbe.inspect()
             requestingAutomation = false
 
-            let granted = results.filter { $0.status.isGranted }.map(\.name)
-            let refused = results.filter { $0.status == .denied }.map(\.name)
-            let unanswered = results.filter { $0.status != .granted && $0.status != .denied }
+            let changed = results.filter { before[$0.name]?.isGranted != true }
+            let granted = changed.filter { $0.status.isGranted }.map(\.name)
+            let refused = changed.filter { $0.status == .denied }.map(\.name)
+            let unanswered = changed.filter { $0.status != .granted && $0.status != .denied }
 
             var parts: [String] = []
             if !granted.isEmpty { parts.append("Granted: \(granted.joined(separator: ", ")).") }
@@ -274,7 +298,9 @@ struct DevicePane: View {
                 // start. Neither is a decision, so the button stays available.
                 parts.append("No answer yet for \(unanswered.map(\.name).joined(separator: ", ")).")
             }
-            automationNote = parts.isEmpty ? nil : parts.joined(separator: " ")
+            automationNote = parts.isEmpty
+                ? "Nothing to grant — everything OpenBoard needs is already allowed."
+                : parts.joined(separator: " ")
         }
     }
 
@@ -451,6 +477,15 @@ struct DevicePane: View {
 
     private func refresh() {
         permissions = PermissionProbe.inspect()
+        // System Events is asleep most of the time, and a permission it has held for
+        // months then reads as "not running". Wake it and ask again, so the row shows
+        // the grant rather than the helper's nap schedule.
+        if permissions.automation["System Events"] == .unavailable {
+            Task {
+                await AutomationRequest.wakeProbeableTargets()
+                permissions = PermissionProbe.inspect()
+            }
+        }
         // Read live rather than remembered: the registration is tied to the bundle
         // path and signature, so it can go stale exactly like a hook path can.
         loginStatus = LoginItem.status
@@ -521,7 +556,8 @@ struct DevicePane: View {
         switch target {
         case "System Events": "typing snippets, ⏎ and ⎋, arrow keys"
         case "Terminal": "jumping to a chat"
-        case "QuickTime Player": "playing the countdown video"
+        // Names the feature, because that is the whole answer to "do I need this?".
+        case "QuickTime Player": "fun mode only — macOS asks the first time you play it"
         default: "driving \(target)"
         }
     }
@@ -529,7 +565,8 @@ struct DevicePane: View {
     private func permissionRow(
         _ name: String, _ why: String,
         status: PermissionProbe.Status, pane: String,
-        subject: String? = nil
+        subject: String? = nil,
+        optional: Bool = false
     ) -> some View {
         HStack(spacing: 10) {
             Circle()
@@ -540,7 +577,12 @@ struct DevicePane: View {
                 Text(why).font(.system(size: 11)).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
-            Text(label(for: status))
+            // An optional target that has not answered is not missing anything —
+            // macOS asks the first time the feature runs. "not running" invited people
+            // to go and fix a permission that was never a problem.
+            Text(optional && !status.isGranted && status != .denied
+                 ? "when needed"
+                 : label(for: status))
                 .font(.system(size: 11).monospaced())
                 .foregroundStyle(.secondary)
                 .help(hint(for: status, name: subject ?? name) ?? "")

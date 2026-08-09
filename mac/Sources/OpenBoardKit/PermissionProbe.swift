@@ -90,12 +90,25 @@ public enum PermissionProbe {
     }
 
     /// Bundle ids the "jump to a chat" action drives.
-    public static let automationTargets: [(name: String, bundleID: String)] = [
-        ("System Events", "com.apple.systemevents"),
-        ("Terminal", "com.apple.Terminal"),
-        // Fun mode drives QuickTime, and reports a permission problem rather than
-        // silently doing nothing when this is missing.
-        ("QuickTime Player", "com.apple.QuickTimePlayerX"),
+    /**
+     The apps this one drives, and whether the board needs them.
+
+     `optional` marks a target that only an optional feature uses. It changes two
+     things, and both are about not manufacturing an alarm:
+
+     - Nothing asks for it up front. macOS raises the consent dialog the first time the
+       feature actually runs, which is the right moment — the user has just chosen to do
+       the thing, so the dialog explains itself.
+     - A missing grant is not a problem to be fixed. Reporting it beside Input
+       Monitoring implies the board is broken when the only casualty is a party trick.
+     */
+    public static let automationTargets: [(name: String, bundleID: String, optional: Bool)] = [
+        ("System Events", "com.apple.systemevents", false),
+        ("Terminal", "com.apple.Terminal", false),
+        // Fun mode drives QuickTime and nothing else does. It prompts on its own the
+        // first time you play the video — opening a file in QuickTime is exactly the
+        // Apple event macOS wants consent for — so there is nothing to ask for here.
+        ("QuickTime Player", "com.apple.QuickTimePlayerX", true),
     ]
 
     /**
