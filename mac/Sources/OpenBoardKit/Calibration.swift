@@ -56,6 +56,24 @@ public struct Calibration: Sendable {
     /// Whether this is the assumed layout rather than one a person confirmed. Drives
     /// the Device pane's offer to check it — an unverified assumption should say so.
     public var isAssumed: Bool { recordedAt == nil && mapping == Calibration.identity.mapping }
+
+    /// Whether the recorded order differs from the one every pad so far reports.
+    ///
+    /// Distinct from `isAssumed`: a confirmed calibration that came out identity is not
+    /// the same as never having checked, even though the board behaves identically. One
+    /// is an answer and the other is a guess that has held so far, and the pane should
+    /// not present them as the same thing.
+    public var isCustom: Bool { mapping != Calibration.identity.mapping }
+
+    /// The mapping as `1→3, 2→1` pairs, for a UI that has to show what was recorded.
+    /// Only the slots that moved: listing six identity pairs to point out that two
+    /// changed buries the answer.
+    public var movedSlots: [(slot: Int, key: Int)] {
+        mapping
+            .filter { $0.key != $0.value }
+            .sorted { $0.key < $1.key }
+            .map { (slot: $0.key, key: $0.value) }
+    }
 }
 
 extension Calibration {

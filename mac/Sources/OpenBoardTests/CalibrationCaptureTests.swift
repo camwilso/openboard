@@ -110,4 +110,42 @@ func runCalibrationCaptureTests() {
         expectEqual(try? CalibrationCapture.parseRows(" 2, 1 / 3,4,5,6 "), [2, 1, 3, 4, 5, 6])
         expect((try? CalibrationCapture.parseRows("1,2/3,4")) == nil)
     }
+
+    /*
+     The three states the Device pane distinguishes.
+
+     `isAssumed` and a confirmed-identity calibration paint the board identically, so
+     it would be easy to collapse them — and that would throw away the entire product
+     of running the check. The pane says "not checked" for one and "checked, standard
+     order" for the other, and these are the properties it asks.
+    */
+    test("an unconfirmed identity layout is assumed, not custom") {
+        let calibration = Calibration.identity
+        expect(calibration.isAssumed)
+        expect(!calibration.isCustom)
+        expect(calibration.movedSlots.isEmpty)
+    }
+
+    test("a confirmed identity layout is no longer assumed, and still not custom") {
+        let calibration = Calibration(
+            mapping: Calibration.identity.mapping,
+            rows: [[1, 2], [3, 4, 5, 6]],
+            recordedAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+        expect(!calibration.isAssumed)
+        expect(!calibration.isCustom)
+    }
+
+    test("a custom order reports only the slots that moved") {
+        let calibration = Calibration(
+            mapping: [1: 2, 2: 1, 3: 3, 4: 4, 5: 5, 6: 6],
+            rows: [[2, 1], [3, 4, 5, 6]],
+            recordedAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+        expect(!calibration.isAssumed)
+        expect(calibration.isCustom)
+        // Not six pairs. Listing the four that did not move buries the two that did.
+        expectEqual(calibration.movedSlots.map(\.slot), [1, 2])
+        expectEqual(calibration.movedSlots.map(\.key), [2, 1])
+    }
 }

@@ -195,16 +195,24 @@ struct DevicePane: View {
                     // in an order this app did not expect, and deleting the button
                     // would leave the capture sheet as code nothing calls, which is how
                     // four separate bugs got into this app.
-                    HStack(spacing: 8) {
-                        Button(board.isCalibrationConfirmed ? "Recalibrate…" : "Check key order…") {
-                            calibrating = true
-                        }
-                        .controlSize(.small)
-                        .disabled(!board.device.isUsable)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Key order").font(.system(size: 12.5))
+                        Text(calibrationStatus)
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
 
-                        if !board.device.isUsable {
-                            Text("Connect the pad first.")
-                                .font(.system(size: 11)).foregroundStyle(.secondary)
+                        HStack(spacing: 8) {
+                            Button(board.isCalibrationConfirmed ? "Recalibrate…" : "Check key order…") {
+                                calibrating = true
+                            }
+                            .controlSize(.small)
+                            .disabled(!board.device.isUsable)
+
+                            if !board.device.isUsable {
+                                Text("Connect the pad first.")
+                                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                            }
                         }
                     }
                     .padding(.top, 2)
@@ -232,6 +240,38 @@ struct DevicePane: View {
         .alert("All permissions granted", isPresented: $allGranted) {
             Button("OK", role: .cancel) {}
         }
+    }
+
+    /**
+     What the board currently believes about which key is which.
+
+     The button had no context: "Recalibrate…" on its own answers neither "is anything
+     wrong?" nor "what would I be changing?", so the honest reading was that pressing it
+     might break something that currently works.
+
+     Three states, and the middle one is why this is not a boolean. A calibration that
+     was checked and came out identity behaves exactly like the assumption — but one is
+     an answer and the other is a guess that has held so far, and collapsing them would
+     throw away the only thing the check produces.
+     */
+    private var calibrationStatus: String {
+        let calibration = board.calibration
+        if calibration.isAssumed {
+            return "Not checked. Running on the order every pad so far reports — "
+                + "slot 1 top-left, then reading order."
+        }
+
+        let when = calibration.recordedAt.map {
+            " on " + $0.formatted(date: .abbreviated, time: .omitted)
+        } ?? ""
+
+        guard calibration.isCustom else {
+            return "Checked\(when) — the standard order, slot 1 top-left."
+        }
+        let moved = calibration.movedSlots
+            .map { "slot \($0.slot) → key \($0.key)" }
+            .joined(separator: ", ")
+        return "Custom order recorded\(when): \(moved)."
     }
 
     /**
