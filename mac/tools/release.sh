@@ -183,11 +183,30 @@ fi
 
 # ---------------------------------------------------------------- sparkle signature
 
+# Informational only, and deliberately not fatal.
+#
+# `appcast.sh` signs the zip itself, and that signature is the one that ships. This is
+# here so a local release prints the value without waiting for the appcast step.
+#
+# Without a key it must not stop the build. `sign_update` reads the private key from the
+# *keychain*, which exists on the maintainer's Mac and not on a CI runner — CI passes the
+# key as a file to appcast.sh instead. So on the first real release this line killed the
+# script after the app had been built, signed, notarized, stapled and passed Gatekeeper:
+# everything expensive had already succeeded, and it failed on a courtesy.
 if [ -n "$SIGN_UPDATE" ]; then
   say "Signing for Sparkle"
-  SIGNATURE=$("$SIGN_UPDATE" "$ZIP")
-  note "$SIGNATURE"
-  printf '%s\n' "$SIGNATURE" > "$DIST/OpenBoard-$VERSION.sparkle"
+  if [ -n "${OB_SPARKLE_KEY_FILE:-}" ]; then
+    SIGNATURE=$("$SIGN_UPDATE" "$ZIP" --ed-key-file "$OB_SPARKLE_KEY_FILE" 2>/dev/null || true)
+  else
+    SIGNATURE=$("$SIGN_UPDATE" "$ZIP" 2>/dev/null || true)
+  fi
+
+  if [ -n "$SIGNATURE" ]; then
+    note "$SIGNATURE"
+    printf '%s\n' "$SIGNATURE" > "$DIST/OpenBoard-$VERSION.sparkle"
+  else
+    note "no signing key here — appcast.sh will sign it"
+  fi
 fi
 
 SHA=$(shasum -a 256 "$ZIP" | cut -d" " -f1)
