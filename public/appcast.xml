@@ -5,5 +5,17 @@
     <link>https://updates.openboardapp.com/appcast.xml</link>
     <description>Updates to OpenBoard.</description>
     <language>en</language>
+    <item>
+      <title>0.1.0</title>
+      <pubDate>Sun, 9 Aug 2026 18:25:30 -0400</pubDate>
+      <sparkle:version>41</sparkle:version>
+      <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <sparkle:releaseNotesLink>https://github.com/camwilso/openboard/releases/tag/v0.1.0</sparkle:releaseNotesLink>
+      <enclosure
+        url="https://github.com/camwilso/openboard/releases/download/v0.1.0/OpenBoard-0.1.0.zip"
+        type="application/octet-stream"
+        sparkle:edSignature="EZcr9scEeDEkIVMUi1Q4QKKjiTjSdBnQREc9lzObMFdvMiH8ZdREI3xRoXEF0xHXAT5PsWaovF9o35BNas5UCg==" length="3848054" />
+    </item>
   </channel>
 </rss>
