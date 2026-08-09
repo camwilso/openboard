@@ -170,6 +170,12 @@ struct DevicePane: View {
                     }
                 }
 
+                // Before Files, not after. Files is reference and this is actionable,
+                // and the actionable thing should not sit below the list of paths
+                // nobody scrolls past.
+                PaneHeader("Version", "Which build this is, and how it gets a newer one.")
+                updateSection
+
                 PaneHeader("Files", "Where your settings and log are kept.")
                 configFileSection
             }
@@ -202,7 +208,6 @@ struct DevicePane: View {
         VStack(alignment: .leading, spacing: 8) {
             fileRow("Settings", url: PreferencesStore.url())
             fileRow("Log", url: Log.url)
-            versionRow
             // Kept: it names capabilities that exist nowhere else in the UI.
             Text("Safe to hand-edit. Holds a few settings this window does not show.")
             .font(.system(size: 11.5))
@@ -212,23 +217,27 @@ struct DevicePane: View {
     }
 
     /**
-     Which build this is, and how to get a newer one.
+     Which build this is, and how it gets a newer one.
 
-     There is no About window, so without this the only way to answer "what version are
-     you on?" is to inspect the bundle's Info.plist from a terminal — which is a poor
-     first question to ask someone reporting a bug.
+     Its own section rather than a line under Files, which is where it started. Files is
+     reference — here is where things live, nothing to do. This is the opposite: a
+     status that changes and a button that acts on it, and burying an action under a
+     list of paths is how it stays unfound.
 
-     Selectable, because the point is to paste it into an issue.
+     There is no About window, so this is also the only answer to "what version are you
+     on?" short of reading Info.plist in a terminal — a poor first question to ask
+     someone reporting a bug. Selectable, because the point is to paste it into an issue.
 
-     The Check button is hidden rather than disabled in a build that cannot update. A
+     The controls are hidden rather than disabled in a build that cannot update. A
      disabled control is a promise that something would happen if only you were allowed;
-     a local build will never have an update feed, so there is nothing to promise.
+     a locally-built copy will never have an update feed, so there is nothing to promise
+     — the status line says why instead.
      */
-    private var versionRow: some View {
+    private var updateSection: some View {
         let info = Bundle.main.infoDictionary
         let short = info?["CFBundleShortVersionString"] as? String ?? "?"
         let build = info?["CFBundleVersion"] as? String ?? "?"
-        return VStack(alignment: .leading, spacing: 6) {
+        return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
                 Text("Version")
                     .font(.system(size: 11.5, weight: .medium))
@@ -238,13 +247,32 @@ struct DevicePane: View {
                     .textSelection(.enabled)
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 0)
-                if commands.canUpdate {
-                    Toggle("Check automatically", isOn: Binding(
+            }
+
+            Text(updateStatusText)
+                .font(.system(size: 11.5))
+                .foregroundStyle(
+                    updater.status.isFailure
+                        ? AnyShapeStyle(Color(RGB(0xD41145)))
+                        : AnyShapeStyle(.secondary)
+                )
+                .fixedSize(horizontal: false, vertical: true)
+
+            if commands.canUpdate {
+                HStack(spacing: 10) {
+                    // A switch, matching Starting up. Both are "should the app do this
+                    // on its own", and two different controls for one question read as
+                    // two different kinds of setting.
+                    Toggle(isOn: Binding(
                         get: { commands.automaticUpdates() },
                         set: { commands.setAutomaticUpdates($0) }
-                    ))
-                    .toggleStyle(.checkbox)
-                    .font(.system(size: 11.5))
+                    )) {
+                        Text("Check for updates automatically").font(.system(size: 12.5))
+                    }
+                    .toggleStyle(.switch)
+
+                    Spacer(minLength: 0)
+
                     Button(updater.status.updateVersion == nil ? "Check Now" : "Install…") {
                         if updater.status.updateVersion == nil {
                             commands.checkForUpdates()
@@ -255,13 +283,6 @@ struct DevicePane: View {
                     .controlSize(.small)
                     .disabled(updater.status == .checking)
                 }
-            }
-            if commands.canUpdate {
-                Text(updateStatusText)
-                    .font(.system(size: 11))
-                    .foregroundStyle(updater.status.isFailure ? AnyShapeStyle(Color(RGB(0xD41145))) : AnyShapeStyle(.tertiary))
-                    .padding(.leading, 64)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
