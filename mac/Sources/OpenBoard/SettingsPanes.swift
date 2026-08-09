@@ -148,8 +148,12 @@ struct DevicePane: View {
 
                  Neither check went away — see `refresh()`. The audit still runs at
                  launch and writes its verdict to the log, which is where a *broken*
-                 install has always been diagnosed from. What is gone is the ability to
-                 repair either from the UI; the README documents both by hand.
+                 install has always been diagnosed from.
+
+                 Repair did not go away either. `hooksProblem` below still offers it,
+                 and has to: a new install has all eight hooks missing, which is the
+                 one state where the app runs, the pad connects, and nothing ever
+                 lights. What is gone is the permanent readout on a healthy machine.
                 */
                 // Hooks have no section either, but a *broken* install still has to be
                 // fixable: without them the app runs, the pad connects, and nothing ever

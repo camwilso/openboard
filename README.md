@@ -137,9 +137,11 @@ Then, in the app:
    board runs on the layout every pad so far reports (slot 1 top-left, reading order),
    so it lights immediately. The check paints six colors and asks one question: are they
    in that order? If your pad disagrees, the same screen lets you map it by hand.
-4. **Wire the hooks**, in Settings → Device → Hooks. It audits `~/.claude/settings.json`
-   and offers to repair it, preserving every unrelated setting and any other tool's
-   hooks on the same events. It backs the file up first.
+4. **Wire the hooks**, in Settings → Device. A fresh install has none, so the pane
+   opens with an orange panel saying so and a **Repair hooks** button — there is no
+   Hooks *section* to find, because on a working machine there is nothing to look at.
+   Repairing edits `~/.claude/settings.json`, preserving every unrelated setting and
+   any other tool's hooks on the same events, and backs the file up first.
 5. **Keep the pad on Layer 1.** Per-key status renders only there; Layer 2 allows custom
    keycodes but never shows status.
 
