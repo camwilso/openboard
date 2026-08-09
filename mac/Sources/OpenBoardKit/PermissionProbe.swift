@@ -195,6 +195,46 @@ public enum PermissionProbe {
         }
     }
 
+    /**
+     Ask for automation consent, showing the system dialog if there is no answer yet.
+
+     The same call as `automation(bundleID:)` with the one flag flipped. That flag is
+     the only way to raise the consent dialog: there is no "request access" API for
+     Automation the way there is for the camera or the microphone. macOS shows it when
+     something actually tries to drive the target, and this is that attempt, minus the
+     side effect of sending a real command.
+
+     **Blocks while the dialog is up.** Calling it on the main thread freezes the app
+     behind a dialog it is itself responsible for — call it off the main thread and hand
+     the result back.
+
+     Still returns `.unavailable` for a target that is not running. The flag controls
+     whether macOS *asks*, not whether it can ask about a process that does not exist,
+     so the caller has to start the target first — see `AutomationRequest` in the app,
+     which is where launching another application belongs.
+     */
+    public static func requestAutomation(bundleID: String) -> Status {
+        var target = AEAddressDesc()
+        let created = bundleID.withCString { pointer in
+            AECreateDesc(typeApplicationBundleID, pointer, strlen(pointer), &target)
+        }
+        guard created == noErr else { return .unknown }
+        defer { AEDisposeDesc(&target) }
+
+        let status = AEDeterminePermissionToAutomateTarget(
+            &target, typeWildCard, typeWildCard, true
+        )
+        switch status {
+        case noErr: return .granted
+        case OSStatus(errAEEventNotPermitted): return .denied
+        case OSStatus(procNotFound): return .unavailable
+        // Should not survive askUserIfNeeded, but a user who dismisses the dialog
+        // without choosing lands here rather than on a decision.
+        case OSStatus(errAEEventWouldRequireUserConsent): return .unknown
+        default: return .unknown
+        }
+    }
+
     /// Everything at once. Cheap enough to call whenever the pane appears — no
     /// subprocesses, no waiting.
     public static func inspect(now: Date = Date()) -> Report {

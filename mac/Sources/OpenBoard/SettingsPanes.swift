@@ -22,6 +22,8 @@ struct DevicePane: View {
     @State private var loginStatus = LoginItem.status
     @State private var loginError: String?
     @State private var allGranted = false
+    @State private var requestingAutomation = false
+    @State private var automationNote: String?
 
     var body: some View {
         ScrollView {
@@ -88,12 +90,46 @@ struct DevicePane: View {
                         allGranted = permissions.missing.isEmpty
                     }
                     .controlSize(.small)
+                    .disabled(requestingAutomation)
+
+                    /*
+                     Automation is the only permission the app can raise a prompt for
+                     itself, and until now it was the only one it did not.
+
+                     The other three send you to System Settings because that is where
+                     they are granted. Automation is not: it has no "request access"
+                     API, macOS asks when something tries to drive the target, and the
+                     targets here are not running — System Events is launch-on-demand
+                     and nobody leaves QuickTime open. So both rows sat at "not running"
+                     with an Open button leading to a pane where OpenBoard was not yet
+                     listed, because it had never asked for anything.
+
+                     Shown only while there is something to ask for. Once both are
+                     granted the button is not a control, it is a leftover.
+                     */
+                    if !automationSettled {
+                        Button(requestingAutomation ? "Asking…" : "Grant automation…") {
+                            requestAutomation()
+                        }
+                        .controlSize(.small)
+                        .disabled(requestingAutomation)
+                        .help("Asks macOS for permission to drive System Events and "
+                            + "QuickTime Player. Each is briefly started so macOS has "
+                            + "something to ask about, then closed again.")
+                    }
 
                     if !permissions.missing.isEmpty {
                         Text("Missing: \(permissions.missing.joined(separator: ", "))")
                             .font(.system(size: 11))
                             .foregroundStyle(Color(RGB(0xFF6A00)))
                     }
+                }
+
+                if let automationNote {
+                    Text(automationNote)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 /*
@@ -191,6 +227,55 @@ struct DevicePane: View {
         // is merely not running does not count against it — see PermissionProbe.Status.
         .alert("All permissions granted", isPresented: $allGranted) {
             Button("OK", role: .cancel) {}
+        }
+    }
+
+    /// Nothing left to ask about — every automation target has answered, one way or
+    /// another. A denial counts as settled: macOS will not re-prompt once someone has
+    /// said no, and only System Settings can undo it.
+    private var automationSettled: Bool {
+        PermissionProbe.automationTargets.allSatisfy { target in
+            let status = permissions.automation[target.name] ?? .unknown
+            return status == .granted || status == .denied
+        }
+    }
+
+    /**
+     Ask macOS for the automation grants, one target at a time.
+
+     The summary afterwards matters more than it looks. Each target produces a *system*
+     dialog, and someone who clicks through two of them has no idea which they answered
+     which way — least of all when one of them briefly opened QuickTime Player. So the
+     result is stated rather than left to be inferred from two dots changing colour.
+
+     A denial is reported without alarm. Automation is optional: without System Events
+     the snippet keys stop working, without QuickTime fun mode does, and neither is the
+     board. Painting a refusal red would imply something is broken that is not.
+     */
+    private func requestAutomation() {
+        requestingAutomation = true
+        automationNote = nil
+        Task {
+            let results = await AutomationRequest.requestAll(current: permissions.automation)
+            permissions = PermissionProbe.inspect()
+            requestingAutomation = false
+
+            let granted = results.filter { $0.status.isGranted }.map(\.name)
+            let refused = results.filter { $0.status == .denied }.map(\.name)
+            let unanswered = results.filter { $0.status != .granted && $0.status != .denied }
+
+            var parts: [String] = []
+            if !granted.isEmpty { parts.append("Granted: \(granted.joined(separator: ", ")).") }
+            if !refused.isEmpty {
+                parts.append("Refused: \(refused.joined(separator: ", ")) — "
+                    + "turn these on in System Settings → Privacy & Security → Automation.")
+            }
+            if !unanswered.isEmpty {
+                // Dismissing the dialog without choosing, or a target that would not
+                // start. Neither is a decision, so the button stays available.
+                parts.append("No answer yet for \(unanswered.map(\.name).joined(separator: ", ")).")
+            }
+            automationNote = parts.isEmpty ? nil : parts.joined(separator: " ")
         }
     }
 
