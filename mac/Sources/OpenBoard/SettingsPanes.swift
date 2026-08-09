@@ -12,6 +12,7 @@ import SwiftUI
  */
 struct DevicePane: View {
     @EnvironmentObject private var board: BoardModel
+    @EnvironmentObject private var updater: Updater
     @Environment(\.boardCommands) private var commands
 
     @State private var permissions = PermissionProbe.inspect()
@@ -227,26 +228,80 @@ struct DevicePane: View {
         let info = Bundle.main.infoDictionary
         let short = info?["CFBundleShortVersionString"] as? String ?? "?"
         let build = info?["CFBundleVersion"] as? String ?? "?"
-        return HStack(spacing: 10) {
-            Text("Version")
-                .font(.system(size: 11.5, weight: .medium))
-                .frame(width: 54, alignment: .leading)
-            Text("\(short) (\(build))")
-                .font(.system(size: 11.5).monospaced())
-                .textSelection(.enabled)
-                .foregroundStyle(.secondary)
-            Spacer(minLength: 0)
-            if commands.canUpdate {
-                Toggle("Check automatically", isOn: Binding(
-                    get: { commands.automaticUpdates() },
-                    set: { commands.setAutomaticUpdates($0) }
-                ))
-                .toggleStyle(.checkbox)
-                .font(.system(size: 11.5))
-                Button("Check Now") { commands.checkForUpdates() }
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                Text("Version")
+                    .font(.system(size: 11.5, weight: .medium))
+                    .frame(width: 54, alignment: .leading)
+                Text("\(short) (\(build))")
+                    .font(.system(size: 11.5).monospaced())
+                    .textSelection(.enabled)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+                if commands.canUpdate {
+                    Toggle("Check automatically", isOn: Binding(
+                        get: { commands.automaticUpdates() },
+                        set: { commands.setAutomaticUpdates($0) }
+                    ))
+                    .toggleStyle(.checkbox)
+                    .font(.system(size: 11.5))
+                    Button(updater.status.updateVersion == nil ? "Check Now" : "Install…") {
+                        if updater.status.updateVersion == nil {
+                            commands.checkForUpdates()
+                        } else {
+                            commands.showAvailableUpdate()
+                        }
+                    }
                     .controlSize(.small)
+                    .disabled(updater.status == .checking)
+                }
+            }
+            if commands.canUpdate {
+                Text(updateStatusText)
+                    .font(.system(size: 11))
+                    .foregroundStyle(updater.status.isFailure ? AnyShapeStyle(Color(RGB(0xD41145))) : AnyShapeStyle(.tertiary))
+                    .padding(.leading, 64)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    /**
+     One line under the version, saying what the updater knows.
+
+     "Never checked" and "no update found" are told apart on purpose. A status line that
+     only knows a boolean renders both as silence, and the difference is the entire
+     question when someone is wondering why they have not been offered a release they
+     know shipped.
+     */
+    private var updateStatusText: String {
+        switch updater.status {
+        case .disabled:
+            return "This build cannot update itself — it was compiled locally."
+        case .notChecked:
+            // Sparkle remembers the last check across launches, so "not checked yet"
+            // alone would be misleading the morning after one — the app has checked,
+            // just not since it started.
+            guard let last = updater.lastCheck else { return "Not checked yet." }
+            return "Last checked \(Self.relative(last))."
+        case .checking:
+            return "Checking…"
+        case .available(let version):
+            return "Version \(version) is available."
+        case .upToDate:
+            guard let last = updater.lastCheck else { return "Up to date." }
+            return "Up to date — last checked \(Self.relative(last))."
+        case .failed(let message):
+            return "Could not check: \(message)"
+        }
+    }
+
+    /// Shared so the two branches above cannot drift into phrasing the same instant
+    /// two different ways.
+    private static func relative(_ date: Date) -> String {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .full
+        return f.localizedString(for: date, relativeTo: Date())
     }
 
     /// One path, shortened to `~` and openable. Disabled rather than hidden when the

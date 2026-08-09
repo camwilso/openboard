@@ -31,6 +31,10 @@ struct OpenBoardApp: App {
             PopoverView()
                 .environmentObject(delegate.board)
                 .environmentObject(delegate.battery)
+                // As an object rather than through BoardCommands: the popover needs to
+                // *observe* the update status, and BoardCommands is a struct of
+                // closures with nothing for SwiftUI to watch.
+                .environmentObject(delegate.updater)
                 .environment(\.boardCommands, commands)
                 .tint(SystemColors.selectedRow)
         } label: {
@@ -85,6 +89,8 @@ struct BoardCommands: Sendable {
     var canUpdate: Bool = false
     /// Check now, because someone clicked.
     var checkForUpdates: @MainActor () -> Void = {}
+    /// Reopen the dialog for an update Sparkle has already found.
+    var showAvailableUpdate: @MainActor () -> Void = {}
     /// Sparkle's background-check preference, read and written through Sparkle rather
     /// than mirrored into our own config — it already persists the answer, and two
     /// copies of one setting is one copy too many.
@@ -187,13 +193,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         dismissMenu: { [weak self] in self?.controller?.dismissMenuBarPopover() },
         canUpdate: Updater.isAvailable,
         checkForUpdates: { [weak self] in self?.updater.checkForUpdates() },
+        showAvailableUpdate: { [weak self] in self?.updater.showAvailableUpdate() },
         automaticUpdates: { [weak self] in self?.updater.automaticallyChecks ?? false },
         setAutomaticUpdates: { [weak self] on in self?.updater.automaticallyChecks = on }
     )
 
     @objc func showMainWindow() {
         if mainWindow == nil {
-            mainWindow = MainWindowController(board: board, commands: commands)
+            mainWindow = MainWindowController(board: board, commands: commands, updater: updater)
         }
         mainWindow?.show()
     }

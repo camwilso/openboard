@@ -15,6 +15,7 @@ import SwiftUI
 struct PopoverView: View {
     @EnvironmentObject private var board: BoardModel
     @EnvironmentObject private var battery: BatteryMonitor
+    @EnvironmentObject private var updater: Updater
     @Environment(\.boardCommands) private var commands
 
     private let width: CGFloat = 376
@@ -41,9 +42,51 @@ struct PopoverView: View {
             }
 
             Divider().opacity(0.6)
+            updateRow
             commandRows
         }
         .frame(width: width)
+    }
+
+    // MARK: update
+
+    /**
+     There is a new version — shown only when there is.
+
+     Placed down here with the commands rather than up top with the blocked row, and
+     that is a judgement about urgency rather than layout. A blocked session is costing
+     you time right now; a new version is not. Putting them in the same place would
+     teach you to skim past the one that matters.
+
+     It also deliberately does not borrow the pad's colours. Orange, green, blue and red
+     mean specific *session* states on the hardware and in this window, and an app update
+     is not a session state — a green update row would read as "a chat finished" to
+     anyone who has learned the board. So it takes the neutral control treatment and
+     earns attention by being absent the rest of the time.
+     */
+    @ViewBuilder
+    private var updateRow: some View {
+        if let version = updater.status.updateVersion {
+            Button { commands.showAvailableUpdate() } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                    Text("Version \(version) is available")
+                        .font(.system(size: 12.5, weight: .medium))
+                    Spacer(minLength: 0)
+                    Text("Install…")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .glassControl()
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 10)
+            .padding(.top, 9)
+        }
     }
 
     // MARK: header
