@@ -73,7 +73,6 @@ struct BoardCommands: Sendable {
     /// Returns false if the observation was rejected — a partial or contradictory
     /// capture must never be written.
     var saveCalibration: @MainActor ([Int]) -> Bool = { _ in false }
-    var keysOff: @MainActor () -> Void = {}
     /// Fun mode. Calling it while it runs cancels it.
     var playCountdown: @MainActor () -> Void = {}
     /// Free one key. The session keeps running — this forgets it, it does not stop it.
@@ -206,7 +205,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         saveCalibration: { [weak self] observed in
             self?.controller?.saveCalibration(observed: observed) ?? false
         },
-        keysOff: { [weak self] in self?.controller?.keysOff() },
         playCountdown: { [weak self] in self?.controller?.playCountdown() },
         release: { [weak self] slot in self?.controller?.release(slot: slot) },
         openSettings: { [weak self] in self?.showMainWindow() },

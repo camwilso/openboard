@@ -238,8 +238,6 @@ enum DeviceStatus: Equatable {
     case permissionDenied(missing: [String])
     /// No vendor interface at all.
     case notFound
-    /// Present and permitted, but no calibration record — nothing may paint.
-    case notCalibrated
 
     var isUsable: Bool { self == .ready }
 
@@ -263,7 +261,6 @@ enum DeviceStatus: Equatable {
         case .inUseElsewhere: "Something else is holding the pad"
         case .permissionDenied: "macOS denied access"
         case .notFound: "No \(name) found"
-        case .notCalibrated: "Not calibrated"
         }
     }
 
@@ -281,8 +278,6 @@ enum DeviceStatus: Equatable {
                 + "These are granted per app, and only take effect after the app is restarted."
         case .notFound:
             "Connect the pad over USB or Bluetooth. If it is plugged in, check that it is on Layer 1."
-        case .notCalibrated:
-            "Slot order is never assumed, so nothing will light until you record which physical key is which."
         case .bluetoothOff:
             "Bluetooth is switched off, so the pad cannot connect at all."
         case .inUseElsewhere:

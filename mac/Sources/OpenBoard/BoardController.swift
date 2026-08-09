@@ -232,21 +232,6 @@ final class BoardController: ObservableObject {
         return true
     }
 
-    /// All six keys dark — the CLI's `calibrate --off`, kept because it is the fastest
-    /// way to tell "the app is not writing" apart from "the pad is not listening".
-    func keysOff() {
-        calibrationTask?.cancel()
-        calibrationTask = nil
-        guard deviceIsOpen else { return }
-        Task { [weak self] in
-            guard let self else { return }
-            try? await self.device.write(batch: [self.device.prepare(
-                lighting: CodexProtocol.LightingConfig(keys: .off, ambient: .off)
-            )])
-            Log.write("keys off")
-        }
-    }
-
     /**
      Seed the board from sessions that are already running.
 
