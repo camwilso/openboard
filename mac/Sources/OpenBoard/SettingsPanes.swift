@@ -146,27 +146,6 @@ struct DevicePane: View {
                  install has always been diagnosed from. What is gone is the ability to
                  repair either from the UI; the README documents both by hand.
                 */
-                HStack(spacing: 8) {
-                    Button("Keys off") { commands.keysOff() }
-                        .controlSize(.small)
-                        .disabled(!board.device.isUsable)
-                        .help("Blank the six keys — the quickest way to tell "
-                            + "\"not writing\" apart from \"not listening\".")
-                    // The section is gone, the escape hatch is not. A pad whose keys
-                    // are in a different order has no other way to be fixed, and
-                    // deleting the button would leave the capture sheet as code nothing
-                    // calls — which is how four separate bugs got into this app.
-                    Button(board.isCalibrationConfirmed ? "Recalibrate…" : "Check key order…") {
-                        calibrating = true
-                    }
-                        .controlSize(.small)
-                        .disabled(!board.device.isUsable)
-                    if !board.device.isUsable {
-                        Text("Connect the pad first.")
-                            .font(.system(size: 11)).foregroundStyle(.secondary)
-                    }
-                }
-
                 // Hooks have no section either, but a *broken* install still has to be
                 // fixable: without them the app runs, the pad connects, and nothing ever
                 // lights. So this appears only when the audit finds a problem, and is
@@ -175,7 +154,7 @@ struct DevicePane: View {
                     hooksProblem
                 }
 
-                PaneHeader("Starting up", "Whether OpenBoard runs without being asked.")
+                PaneHeader("Starting up", "Setting OpenBoard up, and keeping it running.")
                 VStack(alignment: .leading, spacing: 8) {
                     Toggle(isOn: loginItemBinding) {
                         Text("Open OpenBoard at login").font(.system(size: 12.5))
@@ -204,6 +183,26 @@ struct DevicePane: View {
                         Text(loginError).font(.system(size: 11.5))
                             .foregroundStyle(Color(RGB(0xD41145)))
                     }
+
+                    // Grouped here as the other thing you do once when setting up, and
+                    // then never again. It is not a setting — nothing about it changes
+                    // in daily use — but it is the only way to fix a pad whose keys are
+                    // in an order this app did not expect, and deleting the button
+                    // would leave the capture sheet as code nothing calls, which is how
+                    // four separate bugs got into this app.
+                    HStack(spacing: 8) {
+                        Button(board.isCalibrationConfirmed ? "Recalibrate…" : "Check key order…") {
+                            calibrating = true
+                        }
+                        .controlSize(.small)
+                        .disabled(!board.device.isUsable)
+
+                        if !board.device.isUsable {
+                            Text("Connect the pad first.")
+                                .font(.system(size: 11)).foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.top, 2)
                 }
 
                 // Before Files, not after. Files is reference and this is actionable,
