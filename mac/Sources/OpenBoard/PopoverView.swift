@@ -34,6 +34,7 @@ struct PopoverView: View {
             if !setup.isReady {
                 SetupNeededView(
                     progress: setup.progress,
+                    sessions: board.slots.filter(\.isLive).count,
                     startSetup: {
                         commands.dismissMenu()
                         commands.openSetup()
@@ -132,20 +133,7 @@ struct PopoverView: View {
 
             Spacer(minLength: 0)
 
-            // Setup first, then the hardware. An install missing hooks has a working
-            // pad and six keys that will never change — showing that board is showing
-            // something that looks live and is not, which is worse than showing
-            // nothing. The device states below are for a set-up install whose pad has
-            // gone away.
-            if !setup.isReady {
-                SetupNeededView(
-                    progress: setup.progress,
-                    startSetup: {
-                        commands.dismissMenu()
-                        commands.openSetup()
-                    }
-                )
-            } else if board.device.isUsable {
+            if board.device.isUsable {
                 BatteryBadge(percent: battery.percent, isCharging: board.isWired)
             }
         }
@@ -702,6 +690,10 @@ struct HoverRowStyle: ButtonStyle {
  */
 struct SetupNeededView: View {
     let progress: SetupProgress
+    /// How many sessions are already running. Said out loud because the alternative
+    /// reads as "nothing is working" — the app has found them, it simply cannot show a
+    /// board worth trusting yet, and those are very different problems.
+    var sessions: Int = 0
     var startSetup: () -> Void = {}
 
     var body: some View {
@@ -716,6 +708,16 @@ struct SetupNeededView: View {
 
             Text("\(progress.requiredDone) of \(progress.requiredTotal) set up")
                 .font(.system(size: 13.5, weight: .semibold))
+
+            if sessions > 0 {
+                Text("\(sessions) session\(sessions == 1 ? "" : "s") found — "
+                     + "the keys stay dark until this is finished.")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 296)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             Text(remaining)
                 .font(.system(size: 11.5))

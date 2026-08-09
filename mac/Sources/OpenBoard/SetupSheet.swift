@@ -25,6 +25,11 @@ struct SetupSheet: View {
     @State private var note: String?
     @State private var working = false
     @State private var calibrating = false
+    /// A refusal macOS has on record. Distinct from "not asked": once someone has said
+    /// no to an Apple Events prompt, the system never asks again — every further
+    /// request returns denied instantly. Asking a second time is guaranteed to fail, so
+    /// the button has to stop offering and point at the only thing that can undo it.
+    @State private var automationRefused = false
 
     private var progress: SetupProgress { setup.progress }
 
@@ -118,10 +123,16 @@ struct SetupSheet: View {
         case .accessibility:
             Button("Open") { openPane("Privacy_Accessibility") }.controlSize(.small)
         case .automation:
-            // The only one the app can grant without sending anyone anywhere.
-            Button(working ? "Asking" : "Grant") { grantAutomation() }
-                .controlSize(.small)
-                .disabled(working || done)
+            // Normally the only step the app can grant without sending anyone anywhere.
+            // A recorded refusal takes that away: macOS will not re-prompt, so the
+            // button changes to the one action that can still work.
+            if automationRefused && !done {
+                Button("Open") { openPane("Privacy_Automation") }.controlSize(.small)
+            } else {
+                Button(working ? "Asking" : "Grant") { grantAutomation() }
+                    .controlSize(.small)
+                    .disabled(working || done)
+            }
         case .calibration:
             // Needs the pad open, because the check paints six colours on it. Disabled
             // rather than hidden: it is a real step, and hiding it would make the count
@@ -240,12 +251,27 @@ struct SetupSheet: View {
         working = true
         note = nil
         Task {
-            _ = await AutomationRequest.requestAll(current: permissions.automation)
+            let results = await AutomationRequest.requestAll(current: permissions.automation)
             working = false
             refresh()
-            if permissions.automation["System Events"]?.isGranted != true {
-                note = "System Events was not granted. Turn it on in System Settings → "
-                    + "Privacy & Security → Automation → OpenBoard."
+
+            let systemEvents = results.first { $0.name == "System Events" }?.status
+            switch systemEvents {
+            case .granted, .none:
+                note = nil
+            case .denied:
+                // The specific case that had no message of its own. Saying "was not
+                // granted" invited another click, and another click cannot work.
+                automationRefused = true
+                note = "macOS has a refusal on record for System Events, so it will not "
+                    + "ask again. Turn OpenBoard on under Automation in System Settings, "
+                    + "then come back and press Check again."
+            case .unavailable:
+                note = "System Events would not start, so macOS had nothing to ask "
+                    + "about. Try again in a moment."
+            case .unknown:
+                note = "No answer was given. Press Grant again and choose OK in the "
+                    + "dialog macOS shows."
             }
         }
     }
