@@ -58,7 +58,10 @@ SIGN_UPDATE="$ROOT/.build/artifacts/sparkle/Sparkle/bin/sign_update"
 [ -x "$SIGN_UPDATE" ] || die "sign_update not found. Run 'swift build' in mac/ first."
 
 # Stopped on any exit, including Ctrl-C. A web server left running on a fixed port is
-# the kind of thing that is discovered days later.
+# the kind of thing that is discovered days later — and worse than merely lingering,
+# it goes on answering on the port while serving a directory this script has since
+# deleted and recreated, so the *next* run fails its own health check with "the server
+# did not come up" about a server that is very much up.
 SERVER_PID=""
 cleanup() {
   [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null || true
@@ -118,10 +121,32 @@ note "appcast.xml written"
 # ---------------------------------------------------------------- serve
 
 say "Serving on :$PORT"
-( cd "$SERVE" && python3 -m http.server "$PORT" >/dev/null 2>&1 ) &
+
+# Refuse rather than fight for it. Something already listening here is almost always
+# this script's own leftovers, and the failure that produces — a stale server answering
+# for a directory that no longer exists — is deeply confusing to debug.
+if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+  die "Port $PORT is already in use, most likely by an earlier run of this script.
+
+  lsof -nP -iTCP:$PORT -sTCP:LISTEN     # see what has it
+  kill \$(lsof -tnP -iTCP:$PORT -sTCP:LISTEN)
+
+Or pass --port with something else."
+fi
+
+# --directory rather than a subshell that cds. `( … ) &` makes $! the *subshell's* pid,
+# so the trap killed a shell that had already exited and left python running — which is
+# how the port came to be occupied in the first place.
+python3 -m http.server "$PORT" --directory "$SERVE" >/dev/null 2>&1 &
 SERVER_PID=$!
-sleep 1
-curl -sf "$FEED" >/dev/null || die "the local server did not come up on port $PORT"
+
+# Poll rather than sleep a guess: usually ready on the first pass, and a slow machine
+# does not turn into a spurious failure.
+for _ in $(seq 1 40); do
+  curl -sf "$FEED" >/dev/null 2>&1 && break
+  sleep 0.25
+done
+curl -sf "$FEED" >/dev/null || die "the local server did not answer on port $PORT"
 note "$FEED"
 
 # ---------------------------------------------------------------- the older build
