@@ -161,6 +161,18 @@ struct PopoverView: View {
 
     // MARK: blocked
 
+    /**
+     The one thing worth doing the moment the popover opens.
+
+     `blocked` is filtered from `slots`, which `occupancy()` builds in slot order — so
+     `first` is the lowest-numbered blocked key, and with several waiting this goes to
+     the one whose key is furthest left rather than to whichever asked most recently.
+     Pressing again gets the next one, because answering the first drops it off the list.
+
+     The row has drawn a ⏎ since it existed and nothing was bound to it: an affordance
+     that names a key it does not honour is worse than no affordance, because it is a
+     promise you only find out about by trying.
+     */
     private var blockedRow: some View {
         Button {
             if let first = board.blocked.first { commands.jump(first.slot) }
@@ -180,6 +192,10 @@ struct PopoverView: View {
             .glassAccent(Color(RGB(0xFF6A00)))
         }
         .buttonStyle(.plain)
+        // Return, while the popover has focus. Safe to make the default action because
+        // the row only exists when something is blocked — there is no state where this
+        // binds Return to nothing, and none where it competes with another default.
+        .keyboardShortcut(.defaultAction)
         .padding(.horizontal, 10)
         .padding(.top, 10)
     }
