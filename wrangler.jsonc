@@ -1,0 +1,39 @@
+{
+  // Serves the Sparkle update feed at updates.openboardapp.com.
+  //
+  // This branch is deployed by Cloudflare Workers Builds on every push. There is no
+  // Worker script — only static assets — so there is deliberately no "main" and no
+  // assets "binding": both are only valid alongside a script, and including them makes
+  // the deploy fail with a config error rather than serve the file.
+  //
+  // Assets live in public/ rather than the branch root so that this config and the
+  // README are not themselves served. With the root as the directory, anyone could
+  // fetch /wrangler.jsonc, which is noise at best.
+  //
+  // Default routing is what we want: a request matching a file serves that file, and
+  // anything else 404s because there is no script to fall through to.
+  //
+  // workers.dev and preview URLs are off so updates.openboardapp.com is the only way
+  // in. Both default to on, and both would expose the feed at a second address — one
+  // that is tied to the Cloudflare account rather than a domain, which is the exact
+  // dependency the custom domain exists to avoid. A stray copy of the feed at another
+  // URL is also a thing that can go stale and be found later.
+  //
+  // The custom domain is declared here rather than left as dashboard-only state. It is
+  // the URL compiled into every shipped build, so it should be reviewable in git and
+  // reproducible from this file alone — not something that exists because someone once
+  // clicked a button and could quietly be removed the same way.
+  "name": "openboard-feed",
+  "compatibility_date": "2026-08-09",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [
+    {
+      "pattern": "updates.openboardapp.com",
+      "custom_domain": true
+    }
+  ],
+  "assets": {
+    "directory": "./public"
+  }
+}

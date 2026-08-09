@@ -1,0 +1,4 @@
+# Wrangler's local cache. Holds the Cloudflare account id and account name, and is
+# per-machine state rather than anything this branch should publish.
+.wrangler/
+node_modules/
