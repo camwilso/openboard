@@ -31,7 +31,7 @@ cask "openboard" do
   # bundle underneath it and costing the user both.
   auto_updates true
 
-  depends_on macos: ">= :sonoma"
+  depends_on macos: :sonoma
 
   app "OpenBoard.app"
 
