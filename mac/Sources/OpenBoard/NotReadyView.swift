@@ -91,7 +91,14 @@ struct RequiresSetup: ViewModifier {
 
     func body(content: Content) -> some View {
         Group {
-            if setup.isReady {
+            if !setup.hasSettled {
+                // Nothing is claimed while the answer is unknown. Showing the
+                // finish-setup screen here and replacing it a moment later reads as the
+                // app changing its mind about whether you are set up.
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if setup.isReady {
                 content
             } else {
                 NotReadyView(progress: setup.progress, purpose: purpose) {

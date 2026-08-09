@@ -25,6 +25,21 @@ final class SetupState: ObservableObject {
     /// obligations and the next thing is the first one that is actually a choice.
     @Published var justCompleted = false
 
+    /**
+     Whether the answer can be trusted yet.
+
+     Not the same as "not set up", and conflating them is what made a finished install
+     flash the welcome screen on launch. System Events is a launch-on-demand helper that
+     macOS stops when idle, so at startup it usually reads `unavailable` — "cannot tell"
+     — which is not a grant, so `isReady` was false, so every surface confidently showed
+     the get-started UI. A moment later the wake finished, the real answer arrived, and
+     it all vanished.
+
+     The flash was brief, and that is the problem: too fast to read, long enough to
+     suggest the app had forgotten something.
+     */
+    @Published private(set) var hasSettled = false
+
     /// The board, for the calibration step. Weak because the delegate owns both and a
     /// strong reference here would be a cycle for the lifetime of the app.
     private weak var board: BoardModel?
@@ -93,9 +108,16 @@ final class SetupState: ObservableObject {
                     hooksHealthy: hooks.isHealthy,
                     opensAtLogin: LoginItem.status.isOn
                 )
+                self.hasSettled = true
                 self.noteCompletionIfNew()
             }
+        } else {
+            // Nothing to wait for — the probe had an answer for every target.
+            hasSettled = true
         }
+        // Note this only ever goes false → true. A later refresh already has a good
+        // answer on screen, and un-settling would blink it away to show a spinner for
+        // something the user can already see.
     }
 
     /// Fires once, ever. Gated on the *required* steps rather than every row: Open at

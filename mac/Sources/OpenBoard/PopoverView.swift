@@ -31,7 +31,9 @@ struct PopoverView: View {
             // something that looks live and is not, which is worse than showing
             // nothing. The device states below are for a set-up install whose pad has
             // gone away.
-            if !setup.isReady {
+            if !setup.hasSettled {
+                CheckingView()
+            } else if !setup.isReady {
                 SetupNeededView(
                     progress: setup.progress,
                     sessions: board.slots.filter(\.isLive).count,
@@ -767,5 +769,30 @@ struct SetupNeededView: View {
         case .hooks: "Claude Code hooks"
         case .openAtLogin: "Open at login"
         }
+    }
+}
+
+
+/**
+ Reading the machine, for the moment that takes.
+
+ Deliberately quiet: no spinner racing, no "Loading…" in bold. This is on screen for a
+ fraction of a second in the ordinary case, and anything attention-seeking would be more
+ disruptive than the flash it replaces. It exists so the window has a *neutral* thing to
+ say while the answer is unknown, instead of guessing "not set up" and being wrong.
+ */
+struct CheckingView: View {
+    var body: some View {
+        VStack(spacing: 9) {
+            ProgressView()
+                .controlSize(.small)
+            Text("Checking permissions…")
+                .font(.system(size: 11.5))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 14)
+        .padding(.top, 22)
+        .padding(.bottom, 24)
     }
 }
