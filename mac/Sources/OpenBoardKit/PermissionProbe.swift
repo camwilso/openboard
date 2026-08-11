@@ -109,6 +109,10 @@ public enum PermissionProbe {
         // first time you play the video — opening a file in QuickTime is exactly the
         // Apple event macOS wants consent for — so there is nothing to ask for here.
         ("QuickTime Player", "com.apple.QuickTimePlayerX", true),
+        // Only jumping to a chat hosted in iTerm2 needs this, and only someone who
+        // uses iTerm2 has it installed at all. Same shape as QuickTime above: nothing
+        // asks for it up front, and a missing grant is not a problem to be fixed.
+        ("iTerm2", "com.googlecode.iterm2", true),
     ]
 
     /**

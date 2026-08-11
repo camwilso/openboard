@@ -47,8 +47,16 @@ If setup says **"macOS has a refusal on record"**, someone answered No to that d
 once. macOS never asks again. Turn OpenBoard on under System Settings → Privacy & Security
 → Automation.
 
-QuickTime Player showing **when needed** is not a problem. It is used only by fun mode, and
-macOS asks the first time you play it.
+QuickTime Player and iTerm2 showing **when needed** is not a problem. Each is used only
+by an optional feature — fun mode for QuickTime, jumping to a chat hosted in iTerm2 — and
+macOS asks the first time that feature actually runs.
+
+**Jumping to a chat in iTerm2 does nothing, or a raise fails with `-1743`.** That is a
+refused Apple event: grant Automation for iTerm2 under System Settings → Privacy &
+Security → Automation, the same way as for Terminal. If iTerm2 was already running when
+you granted it, quit and reopen iTerm2 once — the grant does not always take effect for a
+target app that is already open. The iTerm2 row only appears in Settings if iTerm2 is
+installed.
 
 ## Colours land on the wrong keys
 

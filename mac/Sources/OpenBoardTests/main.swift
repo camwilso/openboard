@@ -68,6 +68,7 @@ runClaudeVoiceTests()
 // The settings window itself.
 runSelectionColorTests()
 runSettingsPersistenceTests()
+runITerm2SettingsUITests()
 runSuiteWiringTests()
 
 // Lighting behaviour.

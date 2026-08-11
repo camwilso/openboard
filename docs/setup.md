@@ -52,6 +52,12 @@ under System Settings → Privacy & Security → Automation.
 QuickTime Player is listed separately and reads **when needed**. It is only used by fun
 mode, and macOS asks the first time you play it. Nothing is wrong.
 
+iTerm2 is listed the same way, **when needed**, and only appears at all if iTerm2 is
+installed. It is only used to jump to a chat hosted in an iTerm2 window or tab, and macOS
+asks the first time a press actually needs it. If iTerm2 was already running when you
+granted it, quit and reopen iTerm2 once — the grant does not always take effect for a
+target app that is already open.
+
 ### Key order
 
 Confirms which physical key is slot 1. The board assumes the order every pad so far

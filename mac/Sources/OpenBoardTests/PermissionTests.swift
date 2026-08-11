@@ -19,6 +19,18 @@ func runPermissionCoverageTests() {
         _ = report.bluetooth
         expect(report.automation.keys.contains("Terminal"))
         expect(report.automation.keys.contains("QuickTime Player"))
+        expect(report.automation.keys.contains("iTerm2"))
+    }
+
+    test("iTerm2 automation is optional, like QuickTime, not required, like Terminal") {
+        // Nobody without iTerm2 should be asked for it, or have a missing grant read as
+        // broken — the same deal QuickTime already gets for fun mode.
+        guard let target = PermissionProbe.automationTargets.first(where: { $0.bundleID == "com.googlecode.iterm2" }) else {
+            expect(false, "iTerm2 is not in automationTargets")
+            return
+        }
+        expectEqual(target.name, "iTerm2")
+        expect(target.optional, "iTerm2 must be optional or it would be woken/asked for up front")
     }
 
     test("Bluetooth is not required for the board to work") {
