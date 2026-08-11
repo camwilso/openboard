@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import IOKit.hid
 import ApplicationServices
@@ -101,19 +102,38 @@ public enum PermissionProbe {
        the thing, so the dialog explains itself.
      - A missing grant is not a problem to be fixed. Reporting it beside Input
        Monitoring implies the board is broken when the only casualty is a party trick.
+
+     QuickTime fits that shape exactly: fun mode is a novelty nobody has to use, and the
+     target is a nice-to-have wherever it happens to exist.
+
+     iTerm2 does not fit it, on a machine that has iTerm2. Jumping to a chat is the same
+     feature whether the terminal underneath is Terminal.app or iTerm2, and Terminal is
+     not optional — so neither should iTerm2 be, once it is actually there to ask about.
+     That is why its entry below computes `optional` from whether iTerm2 is installed
+     rather than declaring it: present, it is asked for up front and counts toward
+     "settled" exactly like Terminal; absent, every consumer of this array — the setup
+     grant flow, the wake-before-probing step, the settings row — treats it exactly like
+     QuickTime, which is to say invisible rather than pending. A permission for an app
+     that will never run on this machine is not a permission worth having an opinion
+     about.
      */
-    public static let automationTargets: [(name: String, bundleID: String, optional: Bool)] = [
-        ("System Events", "com.apple.systemevents", false),
-        ("Terminal", "com.apple.Terminal", false),
-        // Fun mode drives QuickTime and nothing else does. It prompts on its own the
-        // first time you play the video — opening a file in QuickTime is exactly the
-        // Apple event macOS wants consent for — so there is nothing to ask for here.
-        ("QuickTime Player", "com.apple.QuickTimePlayerX", true),
-        // Only jumping to a chat hosted in iTerm2 needs this, and only someone who
-        // uses iTerm2 has it installed at all. Same shape as QuickTime above: nothing
-        // asks for it up front, and a missing grant is not a problem to be fixed.
-        ("iTerm2", "com.googlecode.iterm2", true),
-    ]
+    public static var automationTargets: [(name: String, bundleID: String, optional: Bool)] {
+        [
+            ("System Events", "com.apple.systemevents", false),
+            ("Terminal", "com.apple.Terminal", false),
+            // Fun mode drives QuickTime and nothing else does. It prompts on its own the
+            // first time you play the video — opening a file in QuickTime is exactly the
+            // Apple event macOS wants consent for — so there is nothing to ask for here.
+            ("QuickTime Player", "com.apple.QuickTimePlayerX", true),
+            // First-class like Terminal when iTerm2 is installed, invisible when it is
+            // not — see the doc comment above for why `optional` is computed here
+            // instead of declared like every other row.
+            (
+                "iTerm2", "com.googlecode.iterm2",
+                NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.googlecode.iterm2") == nil
+            ),
+        ]
+    }
 
     /**
      Reading the pad — HID input, hence every light and every keypress.

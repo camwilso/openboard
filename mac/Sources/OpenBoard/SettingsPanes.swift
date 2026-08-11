@@ -63,12 +63,15 @@ struct DevicePane: View {
                         "Bluetooth", "reading the pad's battery level",
                         status: permissions.bluetooth, pane: "Privacy_Bluetooth"
                     )
-                    // iTerm2's row would nag anyone who does not use iTerm2 at all —
-                    // the target is `optional`, but `optional` only controls whether
-                    // it is asked for up front, not whether it renders. Filtering it
-                    // out here when the app is not installed is the row-level half of
-                    // "must not demand iTerm2 permission on machines without iTerm2";
-                    // `automation(bundleID:)` itself is already harmless either way.
+                    // iTerm2's row would nag anyone who does not use iTerm2 at all.
+                    // `optional` now already tracks whether iTerm2 is installed, but
+                    // `optional` only ever changes what a rendered row *says* — the
+                    // "when needed" label further down — not whether a row appears at
+                    // all. Every entry in `automationTargets` gets a row from this
+                    // `ForEach`, so filtering iTerm2 out here when it is not installed
+                    // is still the only thing making it invisible rather than merely
+                    // quiet; `automation(bundleID:)` itself is already harmless either
+                    // way.
                     ForEach(
                         PermissionProbe.automationTargets.filter {
                             $0.bundleID != "com.googlecode.iterm2"
@@ -130,9 +133,10 @@ struct DevicePane: View {
                         }
                         .controlSize(.small)
                         .disabled(requestingAutomation)
-                        .help("Asks macOS for permission to drive System Events, which "
-                            + "the key actions need. QuickTime is not included — fun "
-                            + "mode asks for that itself the first time you play it.")
+                        .help("Asks macOS for permission to drive System Events and the "
+                            + "terminals press-to-jump raises — Terminal, and iTerm2 when "
+                            + "installed. QuickTime is not included — fun mode asks for "
+                            + "that itself the first time you play it.")
                     }
 
                     if !permissions.missing.isEmpty {

@@ -36,12 +36,13 @@ func runSelectionColorTests() {
  The iTerm2 Automation row must not nag a machine that does not have iTerm2.
 
  `PermissionProbe.automationTargets` is a compiled-in array `SettingsPanes`' `ForEach`
- renders one row per entry — `optional: true` (checked in `PermissionTests.swift`)
- keeps it from being woken or asked for up front, but the row itself still rendered
- unconditionally before this guard, which is exactly the "demand permission for an app
- that is not installed" failure the design forbids. `SettingsPanes.swift` lives in the
- `OpenBoard` executable target, which `OpenBoardTests` cannot `import` (same constraint
- `FocusITerm2Tests.swift` documents), so this reads the source instead.
+ renders one row per entry. `optional` (checked in `PermissionTests.swift`) now tracks
+ whether iTerm2 is installed, but it only ever changes what a rendered row *says* — the
+ row itself still rendered unconditionally before this guard, which is exactly the
+ "demand permission for an app that is not installed" failure the design forbids.
+ `SettingsPanes.swift` lives in the `OpenBoard` executable target, which `OpenBoardTests`
+ cannot `import` (same constraint `FocusITerm2Tests.swift` documents), so this reads the
+ source instead.
  */
 func runITerm2SettingsUITests() {
     let root = URL(fileURLWithPath: #filePath)
