@@ -47,6 +47,7 @@ runScrollTests()
 runEncoderClickTests()
 runHoldTests()
 runJoystickTests()
+runFocusITerm2Tests()
 
 // Configuration and where it lives.
 runPreferencesTests()

@@ -261,7 +261,13 @@ enum Actions {
      Both surfaces answer this, by different means, and the third case answers *no* on
      purpose:
 
-     - **Terminal** compares the frontmost tab's tty. Exact.
+     - **Terminal or iTerm2** compares the frontmost tab's (or session's) tty. Exact.
+       `SlotView` does not say which of the two hosts the session — `Focus.raise` does
+       not need to know either, per its own tty-exact-match fallback — so this asks
+       Terminal first and, if that does not match, iTerm2. Each is only asked if it is
+       already running: guarded the same way `Focus.focusTerminal`/`focusITerm2` are,
+       so polling this during `confirmFrontmost`'s retry loop cannot launch an app the
+       session was never hosted in.
      - **VS Code, extension-hosted** compares the focused window's title against the
        session's name. The extension names its tab after the session, so a revealed chat
        puts its name in the window title — see `VSCodeWindows`.
@@ -282,15 +288,29 @@ enum Actions {
 
         guard let tty = target.surface else { return false }
         let wanted = tty.hasPrefix("/dev/") ? tty : "/dev/\(tty)"
-        let result = run("""
-        tell application "Terminal"
-          repeat with w from 1 to count of windows
-            if frontmost of window w then return tty of selected tab of window w
-          end repeat
-          return ""
-        end tell
-        """)
-        return result.ok && result.detail == wanted
+
+        if Focus.isRunning(bundleID: "com.apple.Terminal") {
+            let result = run("""
+            tell application "Terminal"
+              repeat with w from 1 to count of windows
+                if frontmost of window w then return tty of selected tab of window w
+              end repeat
+              return ""
+            end tell
+            """)
+            if result.ok && result.detail == wanted { return true }
+        }
+
+        if Focus.isRunning(bundleID: "com.googlecode.iterm2") {
+            let result = run("""
+            tell application "iTerm2"
+              return tty of current session of current window
+            end tell
+            """)
+            if result.ok && result.detail == wanted { return true }
+        }
+
+        return false
     }
 
     // MARK: - plumbing
