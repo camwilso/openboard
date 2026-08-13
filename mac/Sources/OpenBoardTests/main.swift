@@ -47,6 +47,7 @@ runScrollTests()
 runEncoderClickTests()
 runHoldTests()
 runJoystickTests()
+runFocusITerm2Tests()
 
 // Configuration and where it lives.
 runPreferencesTests()
@@ -67,6 +68,7 @@ runClaudeVoiceTests()
 // The settings window itself.
 runSelectionColorTests()
 runSettingsPersistenceTests()
+runITerm2SettingsUITests()
 runSuiteWiringTests()
 
 // Lighting behaviour.

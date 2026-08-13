@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import OpenBoardKit
 
@@ -19,6 +20,34 @@ func runPermissionCoverageTests() {
         _ = report.bluetooth
         expect(report.automation.keys.contains("Terminal"))
         expect(report.automation.keys.contains("QuickTime Player"))
+        expect(report.automation.keys.contains("iTerm2"))
+    }
+
+    test("iTerm2 automation is first-class, like Terminal, when iTerm2 is installed") {
+        // This machine has iTerm2 — see toj design notes — so the jump feature it
+        // drives is not optional, and neither is asking for it: an ungranted iTerm2
+        // must be woken and asked for up front, exactly like Terminal, not deferred to
+        // whenever the feature first runs.
+        guard let target = PermissionProbe.automationTargets.first(where: { $0.bundleID == "com.googlecode.iterm2" }) else {
+            expect(false, "iTerm2 is not in automationTargets")
+            return
+        }
+        expectEqual(target.name, "iTerm2")
+        expect(
+            NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.googlecode.iterm2") != nil,
+            "this test assumes iTerm2 is installed on the machine running it"
+        )
+        expect(!target.optional, "iTerm2 must not be optional once it is installed")
+    }
+
+    test("QuickTime automation stays optional — it is the novelty, not iTerm2") {
+        // The contrast is the point: QuickTime's grant is a courtesy for a party trick,
+        // never asked for up front and never counted as missing.
+        guard let target = PermissionProbe.automationTargets.first(where: { $0.bundleID == "com.apple.QuickTimePlayerX" }) else {
+            expect(false, "QuickTime Player is not in automationTargets")
+            return
+        }
+        expect(target.optional, "QuickTime must stay optional regardless of iTerm2's installed-ness")
     }
 
     test("Bluetooth is not required for the board to work") {

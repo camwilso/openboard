@@ -8,8 +8,10 @@ import OpenBoardKit
  Ported from `lib/focus.cjs`, including the mistake it made. Two strategies, chosen by
  how the session runs:
 
- - **Terminal: exact.** Terminal's AppleScript dictionary exposes `tty` per tab, and a
-   CLI session's process owns a tty, so the precise tab can be selected.
+ - **Terminal or iTerm2: exact.** Both apps' AppleScript dictionaries expose `tty` —
+   Terminal per tab, iTerm2 per session — and a CLI session's process owns a tty, so
+   the precise tab (or session) can be selected. A tty is tried against Terminal
+   first, then iTerm2, since an exact-match miss cannot mis-raise anything.
  - **VS Code: approximate.** An extension-hosted session has no tty, so the window for
    the workspace folder is raised. That focuses the right window, not the specific
    Claude panel inside it — an honest limit rather than a bug to chase.
@@ -20,7 +22,8 @@ import OpenBoardKit
  unrelated to the session — a confident wrong answer to "jump to that chat", which is
  worse than admitting there is nowhere to go.
 
- Needs Automation permission for Terminal. Granted per app, and only after a restart.
+ Needs Automation permission for Terminal and, separately, for iTerm2. Granted per
+ app, and only after a restart.
  */
 enum Focus {
     enum Outcome: Equatable {
@@ -51,7 +54,17 @@ enum Focus {
 
         if let tty = slot.surface, tty.hasPrefix("ttys") || tty.hasPrefix("/dev/") {
             let path = tty.hasPrefix("/dev/") ? tty : "/dev/\(tty)"
-            return focusTerminal(tty: path)
+            switch focusTerminal(tty: path) {
+            case .notFound:
+                // The tty is exact-match-or-nothing, so a miss here cannot mis-raise
+                // Terminal — it is safe to try iTerm2 next. A `.raised` or `.failed`
+                // (e.g. Automation refused) returns as-is: chaining a second app onto a
+                // permission refusal would just stack a second prompt or refusal on top
+                // of one the user already needs to resolve for Terminal.
+                return focusITerm2(tty: path)
+            case let outcome:
+                return outcome
+            }
         }
 
         return .noWindow
@@ -111,6 +124,11 @@ enum Focus {
 
     /// Select the Terminal tab whose tty matches, and bring it forward.
     private static func focusTerminal(tty: String) -> Outcome {
+        // "tell application" launches the app if it is not running. A user who never
+        // opens Terminal should not have this key start it for them just to discover
+        // there is nothing to find — so skip the attempt entirely, the same way a miss
+        // inside the AppleScript itself is reported: `.notFound`.
+        guard isRunning(bundleID: "com.apple.Terminal") else { return .notFound }
         let escaped = tty.replacingOccurrences(of: "\"", with: "\\\"")
         let script = """
         tell application "Terminal"
@@ -136,6 +154,57 @@ enum Focus {
         }
     }
 
+    /**
+     Select the iTerm2 session whose tty matches, and bring it forward.
+
+     iTerm2's AppleScript dictionary is one level deeper than Terminal's: a window
+     holds tabs, and a tab holds one or more sessions (its splits), so the tty lives on
+     the session, not the tab. The walk is otherwise the same exact-match idea as
+     `focusTerminal` — windows, then tabs, then (here) sessions — and a match selects
+     the session, then its tab, then raises the window, so a session buried in a split
+     among several tabs in one window is reached the same way a session in its own
+     window is.
+
+     Ported from the go/no-go spike (`docs/discovery/iterm2-spike.md`), which proved
+     the walk against a live rig before this was written.
+     */
+    private static func focusITerm2(tty: String) -> Outcome {
+        // Same reasoning as `focusTerminal`: never launch iTerm2 just to look for a
+        // session that cannot be in it because it is not running.
+        guard isRunning(bundleID: "com.googlecode.iterm2") else { return .notFound }
+        let escaped = tty.replacingOccurrences(of: "\"", with: "\\\"")
+        let script = """
+        tell application "iTerm2"
+          repeat with w in windows
+            repeat with t in tabs of w
+              repeat with s in sessions of t
+                if (tty of s) is equal to "\(escaped)" then
+                  select t
+                  tell t to select s
+                  select w
+                  activate
+                  return "focused"
+                end if
+              end repeat
+            end repeat
+          end repeat
+          return "not-found"
+        end tell
+        """
+        let result = run(script, forApp: "iTerm2")
+        switch result {
+        case let .success(output):
+            return output == "focused" ? .raised(method: "iterm-tty") : .notFound
+        case let .failure(message):
+            return .failed(message)
+        }
+    }
+
+    /// Whether an app with this bundle ID is already running, without launching it.
+    /// `NSRunningApplication` is in-process — no `osascript` spawn just to ask.
+    static func isRunning(bundleID: String) -> Bool {
+        !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty
+    }
 
     /// osascript's stdout, or the reason it failed. A plain pair rather than
     /// `Result`, whose failure type must be an `Error`.
@@ -144,7 +213,7 @@ enum Focus {
         case failure(String)
     }
 
-    private static func run(_ script: String) -> ScriptResult {
+    private static func run(_ script: String, forApp app: String = "Terminal") -> ScriptResult {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
         process.arguments = ["-e", script]
@@ -162,9 +231,11 @@ enum Focus {
                 data: errors.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8
             )?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "unknown"
             // -1743 is a refused Apple event: Automation has not been granted. Named
-            // rather than passed through as a number, because the fix is specific.
+            // rather than passed through as a number, because the fix is specific —
+            // and named for whichever app refused it, not hardcoded to Terminal, now
+            // that `run` drives more than one.
             if detail.contains("-1743") {
-                return .failure("not authorised to control Terminal — grant Automation")
+                return .failure("not authorised to control \(app) — grant Automation")
             }
             return .failure(detail)
         }
