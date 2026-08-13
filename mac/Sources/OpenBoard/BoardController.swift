@@ -1183,8 +1183,19 @@ final class BoardController: ObservableObject {
              `backgroundSubagentIDs`) is authoritative and replaces the whole
              `delegatingAgentIDs` set wholesale — never trusted as a running total
              across `Stop`s. This is a no-op for every event that does not map to
-             `.done` (only `Stop` ever does, per `EventMapper.state`), so a plain turn
-             with no subagents writes exactly the same `.done` it always has.
+             `.done` — Claude Code's `Stop` is the case this override exists for, but
+             other harnesses' `.done`-mapped events (Pi's `turn_end`/`agent_settled`,
+             `SessionRegistry.swift`) and a `Notification` subtype remapped to `.done`
+             (`HarnessPane`'s picker) reach the same override too — so a plain turn with
+             no subagents writes exactly the same `.done` it always has.
+
+             No deferred-transition replay needed for the last agent landing: when the
+             final background subagent finishes, the CLI has been observed to inject a
+             synthetic `UserPromptSubmit` (its prompt begins with `<task-notification>`)
+             followed by a real `Stop` — not a documented contract, but consistent
+             across hardware validation. That follow-on `Stop` reconciles the count to
+             zero and paints `.done` through this exact path — nothing needs to be
+             stashed and replayed when the counter drops.
              */
             if state == .done {
                 registry.reconcileDelegation(
