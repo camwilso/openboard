@@ -648,7 +648,12 @@ func runHarnessTests() {
     test("every described event actually maps to something") {
         // A row on screen for an event the mapper ignores would be a promise the board
         // does not keep. Notification is the exception: it maps per subtype.
-        for event in OpenBoardKit.Harness.claudeCode.events where event.name != "Notification" {
+        // SubagentStart/SubagentStop are also exceptions: they are handled by the
+        // delegation carve-out ahead of `EventMapper` (`BoardController.handle`), not
+        // by the mapper itself.
+        let handledOutsideEventMapper: Set<String> = ["Notification", "SubagentStart", "SubagentStop"]
+        for event in OpenBoardKit.Harness.claudeCode.events
+        where !handledOutsideEventMapper.contains(event.name) {
             expect(
                 EventMapper.state(for: event.name) != nil,
                 "\(event.name) is listed but maps to no state"

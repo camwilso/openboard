@@ -183,6 +183,33 @@ func runHookTests() {
         }
     }
 
+    test("backgroundSubagentIDs filters background_tasks to type == subagent") {
+        // By design, the Stop-time reconcile is subagent-only scope — a
+        // shell/monitor/workflow/teammate/cloud-session/MCP-task background entry
+        // must not count toward delegatedCount.
+        let event = HookServer.Event(raw: [
+            "hook_event_name": "Stop",
+            "session_id": "s",
+            "background_tasks": [
+                ["id": "agent-1", "type": "subagent"],
+                ["id": "shell-1", "type": "shell"],
+                ["id": "agent-2", "type": "subagent"],
+                ["id": "monitor-1", "type": "monitor"],
+            ],
+        ])
+        expectEqual(Set(event.backgroundSubagentIDs), Set(["agent-1", "agent-2"]))
+    }
+
+    test("backgroundSubagentIDs is empty when background_tasks is absent or empty") {
+        let missing = HookServer.Event(raw: ["hook_event_name": "Stop", "session_id": "s"])
+        expect(missing.backgroundSubagentIDs.isEmpty)
+
+        let empty = HookServer.Event(raw: [
+            "hook_event_name": "Stop", "session_id": "s", "background_tasks": [],
+        ])
+        expect(empty.backgroundSubagentIDs.isEmpty)
+    }
+
     test("writing to a socket nobody is listening on fails quietly") {
         // The app not running is a normal state. The helper must return without a
         // sound: a hook runs inline with the session and cannot be allowed to

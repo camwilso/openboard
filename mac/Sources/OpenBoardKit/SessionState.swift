@@ -54,7 +54,7 @@ public enum SessionState: String, CaseIterable, Sendable, Codable {
         switch self {
         case .idle: "Session open, nothing running."
         case .viewing: "Idle, and the chat you are looking at."
-        case .working: "A turn is running."
+        case .working: "A turn — or a delegated subagent — is running."
         case .awaiting: "Blocked on a permission prompt."
         case .stalled: "An idle prompt fired."
         case .done: "Finished, and you have not been back yet."

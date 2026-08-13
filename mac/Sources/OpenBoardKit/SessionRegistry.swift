@@ -31,6 +31,12 @@ public struct SessionRegistry: Sendable, Equatable {
         /// Enter but ignores Escape — so "reject" is not universally possible and
         /// the caller needs to know rather than send a key into the void.
         public var pendingTool: String?
+        /// Count of in-flight background subagents for this session. Not persisted
+        /// (`RegistryStore.StoredEntry` omits it, same precedent as `pendingTool`) —
+        /// on relaunch it starts at 0 and self-heals on the next `Stop`'s reconcile
+        /// (`BoardController.handle`'s `Stop` branch). A resumed/forked CLI session can
+        /// also leave the live counter briefly stale; same self-heal applies.
+        public var delegatedCount: Int = 0
         public var claimSeq: Int
         public var claimedAt: Date
         public var updatedAt: Date
@@ -252,6 +258,40 @@ public struct SessionRegistry: Sendable, Equatable {
     @discardableResult
     public mutating func markEnded(sessionID: String, now: Date = Date()) -> Entry? {
         setState(sessionID: sessionID, to: .ended, now: now)
+    }
+
+    /// Increment or decrement `delegatedCount` for `SubagentStart`/`SubagentStop`.
+    /// Never allocates — mirrors `setState`'s own rule: an unknown `sessionID` is
+    /// ignored rather than given a key, so a subagent event can never claim a slot.
+    /// Floored at 0 on decrement, protecting against duplicate `SubagentStop` delivery.
+    @discardableResult
+    public mutating func adjustDelegation(sessionID: String, event: String) -> Entry? {
+        guard let index = entries.firstIndex(where: { $0.sessionID == sessionID }) else {
+            return nil
+        }
+        switch event {
+        case "SubagentStart":
+            entries[index].delegatedCount += 1
+        case "SubagentStop":
+            entries[index].delegatedCount = max(0, entries[index].delegatedCount - 1)
+        default:
+            break
+        }
+        return entries[index]
+    }
+
+    /// Authoritative reconcile of `delegatedCount`, called on every `Stop`. Replaces
+    /// whatever the `SubagentStart`/`SubagentStop` carve-out's incremental counter
+    /// produced — never trusted as a running total across `Stop`s (proven necessary by
+    /// out-of-order-finish and non-head array removal). Never allocates, same rule as
+    /// `setState`/`adjustDelegation`.
+    @discardableResult
+    public mutating func reconcileDelegation(sessionID: String, count: Int) -> Entry? {
+        guard let index = entries.firstIndex(where: { $0.sessionID == sessionID }) else {
+            return nil
+        }
+        entries[index].delegatedCount = count
+        return entries[index]
     }
 
     /// Drop entries whose process is gone. A dead session holding a key makes the

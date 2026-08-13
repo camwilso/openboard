@@ -895,6 +895,37 @@ final class BoardController: ObservableObject {
     }
 
     private func handle(_ event: HookServer.Event) async {
+        /*
+         Delegating-state carve-out, ahead of `Eligibility.evaluate`.
+
+         `SubagentStart`/`SubagentStop` payloads carry `agent_id`/`agent_type` even
+         though they describe the *parent* session's own bookkeeping, not a subagent
+         process reporting in — `Eligibility.evaluate`'s first two checks would refuse
+         both unconditionally otherwise (Eligibility.swift:79-86). This branch is keyed
+         on the two literal event names only, never on "any event with an agent field",
+         so a subagent's own PreToolUse/PostToolUse (which also carries those fields)
+         still falls through to `Eligibility.evaluate` below and is refused exactly as
+         today. `adjustDelegation` never allocates — an unknown `session_id` is
+         ignored rather than given a key, so scarcity is preserved by construction.
+
+         This also bypasses the CLAUDE_AGENT_ID/
+         CLAUDE_AGENT_TYPE env checks Eligibility would otherwise apply, so a *nested*
+         subagent's own SubagentStart could in principle reach `adjustDelegation` and
+         over-count. Bounded by the authoritative reconcile on every `Stop` (below),
+         which replaces the incremental count with the true `background_tasks` size
+         regardless of how it got there.
+
+         No `publish()`/`paint()` here: `SubagentStart` precedes the turn's own `Stop`
+         by construction (spike-observed ordering), so there is no visible state change
+         to paint at dispatch time — the effect surfaces the next time `Stop` reconciles
+         and (possibly) overrides `.done` to `.working`, which already repaints.
+         */
+        if event.name == "SubagentStart" || event.name == "SubagentStop",
+           let sessionID = event.sessionID {
+            registry.adjustDelegation(sessionID: sessionID, event: event.name)
+            return
+        }
+
         // Fail-closed: an unrecognised surface gets no key. Applied here rather than
         // in the helper so the rules live in one place and can be reasoned about.
         let verdict = Eligibility.evaluate(
@@ -1110,7 +1141,27 @@ final class BoardController: ObservableObject {
             registry.setState(sessionID: sessionID, to: .working)
             Log.write("hook \(event.name): \(existing.state.rawValue) -> working")
         } else {
-            registry.setState(sessionID: sessionID, to: state, pendingTool: event.toolName)
+            /*
+             Delegating-state override: a `Stop` that would paint `.done` paints
+             `.working` instead while background subagents are still in flight.
+
+             `background_tasks` (filtered to `type == "subagent"` by
+             `backgroundSubagentIDs`) is authoritative and replaces whatever the
+             `SubagentStart`/`SubagentStop` carve-out's incremental counter produced —
+             never trusted as a running total across `Stop`s. This is a no-op for
+             every event that does not map to `.done` (only `Stop` ever does, per
+             `EventMapper.state`), so a plain turn with no subagents writes exactly
+             the same `.done` it always has.
+             */
+            if state == .done {
+                registry.reconcileDelegation(
+                    sessionID: sessionID,
+                    count: event.backgroundSubagentIDs.count
+                )
+            }
+            let delegating = (registry.entry(forSession: sessionID)?.delegatedCount ?? 0) > 0
+            let applied = (state == .done && delegating) ? SessionState.working : state
+            registry.setState(sessionID: sessionID, to: applied, pendingTool: event.toolName)
         }
 
         publish()

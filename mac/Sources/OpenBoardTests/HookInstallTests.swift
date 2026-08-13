@@ -225,7 +225,13 @@ func runHookOmissionTests() {
     test("every wired event is one the board acts on") {
         // A hook that maps to no state is work done on every occurrence and then
         // discarded — and each one runs a process per session per event.
-        for event in HookInstall.events where event.name != "Notification" {
+        //
+        // SubagentStart/SubagentStop are excluded alongside Notification: they are
+        // handled by the delegation carve-out ahead of `EventMapper`
+        // (`BoardController.handle`), not by the mapper itself, so
+        // `EventMapper.state(for:)` correctly returns nil for both.
+        let handledOutsideEventMapper: Set<String> = ["Notification", "SubagentStart", "SubagentStop"]
+        for event in HookInstall.events where !handledOutsideEventMapper.contains(event.name) {
             expect(
                 EventMapper.state(for: event.name) != nil
                     || EventMapper.clearsAttention.contains(event.name),

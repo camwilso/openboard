@@ -241,6 +241,112 @@ func runRegistryTests() {
         // Notification needs a matcher, and carries its own map.
         expect(EventMapper.state(for: "Notification") == nil)
     }
+
+    test("adjustDelegation on SubagentStart increments an existing entry, and ignores an unknown session") {
+        var registry = SessionRegistry()
+        _ = registry.claim(sessionID: "a", pid: 1, isAlive: alwaysAlive)
+        _ = registry.adjustDelegation(sessionID: "a", event: "SubagentStart")
+        expectEqual(registry.entry(forSession: "a")?.delegatedCount, 1)
+        _ = registry.adjustDelegation(sessionID: "a", event: "SubagentStart")
+        expectEqual(registry.entry(forSession: "a")?.delegatedCount, 2)
+
+        // An unknown session_id never allocates a slot — mirrors setState's own rule.
+        let before = registry.entries.count
+        let result = registry.adjustDelegation(sessionID: "ghost", event: "SubagentStart")
+        expect(result == nil, "an unknown session must not be given a key")
+        expectEqual(registry.entries.count, before)
+    }
+
+    test("adjustDelegation on SubagentStop decrements, floors at 0, and ignores an unknown session") {
+        var registry = SessionRegistry()
+        _ = registry.claim(sessionID: "a", pid: 1, isAlive: alwaysAlive)
+        _ = registry.adjustDelegation(sessionID: "a", event: "SubagentStart")
+        _ = registry.adjustDelegation(sessionID: "a", event: "SubagentStart")
+        _ = registry.adjustDelegation(sessionID: "a", event: "SubagentStop")
+        expectEqual(registry.entry(forSession: "a")?.delegatedCount, 1)
+        _ = registry.adjustDelegation(sessionID: "a", event: "SubagentStop")
+        expectEqual(registry.entry(forSession: "a")?.delegatedCount, 0)
+        // Duplicate SubagentStop delivery must not go negative.
+        _ = registry.adjustDelegation(sessionID: "a", event: "SubagentStop")
+        expectEqual(registry.entry(forSession: "a")?.delegatedCount, 0)
+
+        expect(
+            registry.adjustDelegation(sessionID: "ghost", event: "SubagentStop") == nil,
+            "an unknown session must not be given a key"
+        )
+    }
+
+    test("reconcileDelegation is authoritative, overriding drifted incremental counts") {
+        // Simulates the spike's out-of-order-finish / non-head-removal case: whatever
+        // SubagentStart/SubagentStop produced is replaced wholesale by the live
+        // background_tasks count on every Stop, never trusted as a running total.
+        var registry = SessionRegistry()
+        _ = registry.claim(sessionID: "a", pid: 1, isAlive: alwaysAlive)
+        _ = registry.adjustDelegation(sessionID: "a", event: "SubagentStart")
+        _ = registry.adjustDelegation(sessionID: "a", event: "SubagentStart")
+        _ = registry.adjustDelegation(sessionID: "a", event: "SubagentStart")
+        expectEqual(registry.entry(forSession: "a")?.delegatedCount, 3)
+
+        // The authoritative Stop-time count disagrees with the drifted increments.
+        _ = registry.reconcileDelegation(sessionID: "a", count: 1)
+        expectEqual(registry.entry(forSession: "a")?.delegatedCount, 1)
+
+        _ = registry.reconcileDelegation(sessionID: "a", count: 0)
+        expectEqual(registry.entry(forSession: "a")?.delegatedCount, 0)
+
+        expect(
+            registry.reconcileDelegation(sessionID: "ghost", count: 5) == nil,
+            "an unknown session must not be given a key"
+        )
+    }
+
+    test("the Stop override formula: done + delegating stays working, done + not delegating stays done") {
+        // Pure-function replica of BoardController.handle's counter-gated override
+        // (the `else` branch of its if/else if/else chain) — the live socket/hook
+        // path is not reachable from this suite, but the formula itself, including
+        // its load-bearing parens, is. `?? 0 > 0` would parse as `?? (0 > 0)` without
+        // them, which always evaluates true for an existing entry with count 0.
+        var registry = SessionRegistry()
+        _ = registry.claim(sessionID: "a", pid: 1, isAlive: alwaysAlive)
+
+        func applied(_ state: SessionState, sessionID: String) -> SessionState {
+            (state == .done && (registry.entry(forSession: sessionID)?.delegatedCount ?? 0) > 0)
+                ? .working : state
+        }
+
+        // No agents in flight: a plain turn's Stop -> done, unchanged
+        // (regression guard).
+        expectEqual(applied(.done, sessionID: "a"), .done)
+
+        // Reconciled to 1 in-flight subagent: Stop -> working, not done.
+        _ = registry.reconcileDelegation(sessionID: "a", count: 1)
+        expectEqual(applied(.done, sessionID: "a"), .working)
+
+        // A state other than .done is never touched by the override, delegating or not.
+        expectEqual(applied(.awaiting, sessionID: "a"), .awaiting)
+
+        // Reconciled back to 0: Stop -> done again.
+        _ = registry.reconcileDelegation(sessionID: "a", count: 0)
+        expectEqual(applied(.done, sessionID: "a"), .done)
+
+        // An unknown session_id must not crash or be treated as delegating.
+        expectEqual(applied(.done, sessionID: "ghost"), .done)
+
+        // The formula alone is not the whole story: BoardController feeds `applied`
+        // into `setState`, which is itself gated by `SessionState.mayReplace`. Prove
+        // `.working` is actually accepted over an entry sitting at `.done` — the exact
+        // path a recovering delegating session takes — rather than
+        // stopping one line short of the guard that could silently swallow it.
+        _ = registry.setState(sessionID: "a", to: .done)
+        expectEqual(registry.entry(forSession: "a")?.state, .done)
+        _ = registry.reconcileDelegation(sessionID: "a", count: 1)
+        let override = applied(.done, sessionID: "a")
+        _ = registry.setState(sessionID: "a", to: override)
+        expectEqual(
+            registry.entry(forSession: "a")?.state, .working,
+            "mayReplace must not swallow the delegating override"
+        )
+    }
 }
 
 /**
