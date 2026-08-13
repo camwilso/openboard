@@ -529,4 +529,34 @@ public enum EventMapper {
             return nil
         }
     }
+
+    /**
+     Whether a mapped state must be dropped rather than applied, because it descends
+     from an `idle_prompt` Notification while the session is delegating.
+
+     `idle_prompt` fires on an idle *timer* (Claude Code's own ~60s "still there?"
+     check), not a real user-idle signal — the same reason `defaultNotifications`
+     deliberately omits it above. Left unmapped in a fresh config it is harmless, but a
+     user who remaps it to *any* state (commonly `.idle`) turns that timer into a false
+     demotion: it fires well inside a delegating session's `.working` window and, since
+     `mayReplace` only guards `done -> idle`, repaints a delegating key straight to
+     slate with no warning.
+
+     Keyed on the **subtype**, not the mapped state, because the remap is
+     user-controlled — suppressing only when the mapped state happens to equal `.idle`
+     would miss a user who remapped `idle_prompt` to some other color, and the false
+     signal is the subtype firing at all, not which color it happened to land on this
+     machine.
+
+     Scoped to `idle_prompt` alone: `permission_prompt`/`agent_needs_input`/
+     `elicitation_dialog` are real attention signals and must keep winning their orange
+     precedence over a delegating `.working`, delegating or not.
+     */
+    public static func suppressesDelegating(
+        eventName: String,
+        matcher: String?,
+        delegatedCount: Int
+    ) -> Bool {
+        eventName == "Notification" && matcher == "idle_prompt" && delegatedCount > 0
+    }
 }

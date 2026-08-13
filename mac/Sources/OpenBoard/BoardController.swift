@@ -1142,6 +1142,31 @@ final class BoardController: ObservableObject {
             Log.write("hook \(event.name): \(existing.state.rawValue) -> working")
         } else {
             /*
+             `idle_prompt` false-demotion guard, ahead of the delegating override below.
+
+             Claude Code fires a Notification with subtype `idle_prompt` on an idle
+             timer (~60s after a turn ends), independent of whether subagents are still
+             running. A config that maps `idle_prompt` to any state (commonly `.idle`)
+             would otherwise repaint a delegating `.working` key straight to slate —
+             `mayReplace` only guards `done -> idle`, not `working -> idle`. Skipped
+             entirely (no `setState`, no repaint) rather than re-applying `.working`,
+             matching this function's own "a branch that declines says so on its own
+             line, without touching the registry" precedent (`clearsAttention` above).
+             */
+            let delegatedBefore = registry.entry(forSession: sessionID)?.delegatedCount ?? 0
+            if EventMapper.suppressesDelegating(
+                eventName: event.name,
+                matcher: event.matcher,
+                delegatedCount: delegatedBefore
+            ) {
+                Log.write(
+                    "hook \(event.name) idle_prompt suppressed (delegating, "
+                        + "\(delegatedBefore) in flight) [\(sessionID.prefix(8))]"
+                )
+                return
+            }
+
+            /*
              Delegating-state override: a `Stop` that would paint `.done` paints
              `.working` instead while background subagents are still in flight.
 
@@ -1159,8 +1184,15 @@ final class BoardController: ObservableObject {
                     count: event.backgroundSubagentIDs.count
                 )
             }
-            let delegating = (registry.entry(forSession: sessionID)?.delegatedCount ?? 0) > 0
+            let delegatedCount = registry.entry(forSession: sessionID)?.delegatedCount ?? 0
+            let delegating = delegatedCount > 0
             let applied = (state == .done && delegating) ? SessionState.working : state
+            if state == .done, delegating {
+                Log.write(
+                    "hook \(event.name) deferred to working (delegating, "
+                        + "\(delegatedCount) in flight) [\(sessionID.prefix(8))]"
+                )
+            }
             registry.setState(sessionID: sessionID, to: applied, pendingTool: event.toolName)
         }
 

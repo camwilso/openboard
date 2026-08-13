@@ -347,6 +347,65 @@ func runRegistryTests() {
             "mayReplace must not swallow the delegating override"
         )
     }
+
+    test("suppressesDelegating: idle_prompt suppressed only while delegating") {
+        // idle_prompt fires on an idle timer, independent of subagent activity — it
+        // must not be allowed to clobber a delegating .working key, but a plain
+        // session (count == 0) is unaffected: the notification applies exactly as it
+        // always has.
+        expect(
+            EventMapper.suppressesDelegating(
+                eventName: "Notification", matcher: "idle_prompt", delegatedCount: 1
+            ),
+            "idle_prompt while delegating must be suppressed"
+        )
+        expect(
+            !EventMapper.suppressesDelegating(
+                eventName: "Notification", matcher: "idle_prompt", delegatedCount: 0
+            ),
+            "idle_prompt with no subagents in flight must apply normally"
+        )
+    }
+
+    test("suppressesDelegating: real attention subtypes are never suppressed") {
+        // permission_prompt/agent_needs_input/elicitation_dialog are genuine
+        // human-attention signals and must keep winning orange precedence over a
+        // delegating .working key — the suppression is keyed on the idle_prompt
+        // subtype specifically, never on any other Notification subtype.
+        for matcher in ["permission_prompt", "agent_needs_input", "elicitation_dialog"] {
+            expect(
+                !EventMapper.suppressesDelegating(
+                    eventName: "Notification", matcher: matcher, delegatedCount: 1
+                ),
+                "\(matcher) must never be suppressed, delegating or not"
+            )
+        }
+    }
+
+    test("suppressesDelegating: keyed on subtype, not event name or mapped state") {
+        // A non-Notification event, or a Notification with no matcher/a different
+        // subtype, must never be suppressed regardless of delegatedCount — the
+        // suppression follows the false signal (the subtype), not the color it
+        // happens to be remapped to.
+        expect(
+            !EventMapper.suppressesDelegating(
+                eventName: "Stop", matcher: "idle_prompt", delegatedCount: 1
+            ),
+            "only a Notification event can be suppressed"
+        )
+        expect(
+            !EventMapper.suppressesDelegating(
+                eventName: "Notification", matcher: nil, delegatedCount: 1
+            ),
+            "a Notification with no matcher must not be suppressed"
+        )
+        expect(
+            !EventMapper.suppressesDelegating(
+                eventName: "Notification", matcher: "agent_completed", delegatedCount: 1
+            ),
+            "an unrelated subtype must not be suppressed"
+        )
+    }
 }
 
 /**
