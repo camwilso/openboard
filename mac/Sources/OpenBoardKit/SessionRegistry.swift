@@ -31,12 +31,19 @@ public struct SessionRegistry: Sendable, Equatable {
         /// Enter but ignores Escape — so "reject" is not universally possible and
         /// the caller needs to know rather than send a key into the void.
         public var pendingTool: String?
-        /// Count of in-flight background subagents for this session. Not persisted
-        /// (`RegistryStore.StoredEntry` omits it, same precedent as `pendingTool`) —
-        /// on relaunch it starts at 0 and self-heals on the next `Stop`'s reconcile
-        /// (`BoardController.handle`'s `Stop` branch). A resumed/forked CLI session can
-        /// also leave the live counter briefly stale; same self-heal applies.
-        public var delegatedCount: Int = 0
+        /// `agent_id`s of in-flight background subagents for this session. A *set*,
+        /// not a bare count: a bare `Int` cannot distinguish "SubagentStop for an
+        /// agent the last `Stop` reconcile already dropped" from "for one it still
+        /// carries," which let a late-arriving `SubagentStop` decrement past a
+        /// reconcile that had already removed that agent by other means — the
+        /// hardware-observed race this field replaced a counter to fix.
+        /// Removing an id that is not present is a documented no-op (`Set.remove`),
+        /// which is exactly what kills that race. Not persisted (`RegistryStore.
+        /// StoredEntry` omits it, same precedent as `pendingTool`) — on relaunch it
+        /// starts empty and self-heals on the next `Stop`'s reconcile
+        /// (`BoardController.handle`'s `Stop` branch). A resumed/forked CLI session
+        /// can also leave the live set briefly stale; same self-heal applies.
+        public var delegatingAgentIDs: Set<String> = []
         public var claimSeq: Int
         public var claimedAt: Date
         public var updatedAt: Date
@@ -260,37 +267,50 @@ public struct SessionRegistry: Sendable, Equatable {
         setState(sessionID: sessionID, to: .ended, now: now)
     }
 
-    /// Increment or decrement `delegatedCount` for `SubagentStart`/`SubagentStop`.
-    /// Never allocates — mirrors `setState`'s own rule: an unknown `sessionID` is
-    /// ignored rather than given a key, so a subagent event can never claim a slot.
-    /// Floored at 0 on decrement, protecting against duplicate `SubagentStop` delivery.
+    /// Insert or remove `agentID` from `delegatingAgentIDs` for `SubagentStart`/
+    /// `SubagentStop`. Never allocates — mirrors `setState`'s own rule: an unknown
+    /// `sessionID` is ignored rather than given a key, so a subagent event can never
+    /// claim a slot. Removing an id not currently in the set (a duplicate
+    /// `SubagentStop`, or one for an agent a prior `Stop` reconcile already dropped)
+    /// is a no-op, not an error — this is the fix for the hardware-observed race
+    /// a bare counter could not express.
+    ///
+    /// **Missing `agent_id` degrade:** if `agentID` is `nil` or empty, the event is
+    /// ignored for set purposes — deliberately, not a placeholder id. An unmatchable
+    /// insert could never be removed by its own `SubagentStop` (there is no id to
+    /// match), so it would only ever be cleaned up by the next `Stop`'s authoritative
+    /// reconcile anyway; skipping the insert here changes nothing about correctness
+    /// and avoids fabricating an id that was never observed.
     @discardableResult
-    public mutating func adjustDelegation(sessionID: String, event: String) -> Entry? {
+    public mutating func adjustDelegation(
+        sessionID: String, event: String, agentID: String?
+    ) -> Entry? {
         guard let index = entries.firstIndex(where: { $0.sessionID == sessionID }) else {
             return nil
         }
+        guard let agentID, !agentID.isEmpty else { return entries[index] }
         switch event {
         case "SubagentStart":
-            entries[index].delegatedCount += 1
+            entries[index].delegatingAgentIDs.insert(agentID)
         case "SubagentStop":
-            entries[index].delegatedCount = max(0, entries[index].delegatedCount - 1)
+            entries[index].delegatingAgentIDs.remove(agentID)
         default:
             break
         }
         return entries[index]
     }
 
-    /// Authoritative reconcile of `delegatedCount`, called on every `Stop`. Replaces
-    /// whatever the `SubagentStart`/`SubagentStop` carve-out's incremental counter
-    /// produced — never trusted as a running total across `Stop`s (proven necessary by
-    /// out-of-order-finish and non-head array removal). Never allocates, same rule as
-    /// `setState`/`adjustDelegation`.
+    /// Authoritative reconcile of `delegatingAgentIDs`, called on every `Stop`.
+    /// Replaces the set wholesale with `ids` — never trusted as a running total
+    /// across `Stop`s (proven necessary by out-of-order-finish and non-head array
+    /// removal, and by the late-`SubagentStop` race `adjustDelegation` alone cannot
+    /// resolve). Never allocates, same rule as `setState`/`adjustDelegation`.
     @discardableResult
-    public mutating func reconcileDelegation(sessionID: String, count: Int) -> Entry? {
+    public mutating func reconcileDelegation(sessionID: String, ids: [String]) -> Entry? {
         guard let index = entries.firstIndex(where: { $0.sessionID == sessionID }) else {
             return nil
         }
-        entries[index].delegatedCount = count
+        entries[index].delegatingAgentIDs = Set(ids)
         return entries[index]
     }
 

@@ -919,10 +919,19 @@ final class BoardController: ObservableObject {
          by construction (spike-observed ordering), so there is no visible state change
          to paint at dispatch time — the effect surfaces the next time `Stop` reconciles
          and (possibly) overrides `.done` to `.working`, which already repaints.
+
+         `agentID` (from the same `agent_id` field Eligibility would have rejected on)
+         is what turns `delegatingAgentIDs` into a set rather than a bare counter — see
+         `SessionRegistry.Entry.delegatingAgentIDs`'s doc comment for the race this
+         closes. A missing/empty `agent_id` degrades to a no-op inside
+         `adjustDelegation` itself, not here.
          */
         if event.name == "SubagentStart" || event.name == "SubagentStop",
            let sessionID = event.sessionID {
-            registry.adjustDelegation(sessionID: sessionID, event: event.name)
+            registry.adjustDelegation(
+                sessionID: sessionID, event: event.name,
+                agentID: event.eligibilityPayload.agentID
+            )
             return
         }
 
@@ -1153,7 +1162,7 @@ final class BoardController: ObservableObject {
              matching this function's own "a branch that declines says so on its own
              line, without touching the registry" precedent (`clearsAttention` above).
              */
-            let delegatedBefore = registry.entry(forSession: sessionID)?.delegatedCount ?? 0
+            let delegatedBefore = registry.entry(forSession: sessionID)?.delegatingAgentIDs.count ?? 0
             if EventMapper.suppressesDelegating(
                 eventName: event.name,
                 matcher: event.matcher,
@@ -1171,20 +1180,19 @@ final class BoardController: ObservableObject {
              `.working` instead while background subagents are still in flight.
 
              `background_tasks` (filtered to `type == "subagent"` by
-             `backgroundSubagentIDs`) is authoritative and replaces whatever the
-             `SubagentStart`/`SubagentStop` carve-out's incremental counter produced —
-             never trusted as a running total across `Stop`s. This is a no-op for
-             every event that does not map to `.done` (only `Stop` ever does, per
-             `EventMapper.state`), so a plain turn with no subagents writes exactly
-             the same `.done` it always has.
+             `backgroundSubagentIDs`) is authoritative and replaces the whole
+             `delegatingAgentIDs` set wholesale — never trusted as a running total
+             across `Stop`s. This is a no-op for every event that does not map to
+             `.done` (only `Stop` ever does, per `EventMapper.state`), so a plain turn
+             with no subagents writes exactly the same `.done` it always has.
              */
             if state == .done {
                 registry.reconcileDelegation(
                     sessionID: sessionID,
-                    count: event.backgroundSubagentIDs.count
+                    ids: event.backgroundSubagentIDs
                 )
             }
-            let delegatedCount = registry.entry(forSession: sessionID)?.delegatedCount ?? 0
+            let delegatedCount = registry.entry(forSession: sessionID)?.delegatingAgentIDs.count ?? 0
             let delegating = delegatedCount > 0
             let applied = (state == .done && delegating) ? SessionState.working : state
             if state == .done, delegating {
