@@ -281,15 +281,25 @@ func runEncoderClickTests() {
  solid, and indistinguishable from any other green key on the board.
  */
 func runFocusPulseTests() {
-    test("a focused finished session breathes, and stays green") {
-        // Green is the thing you came back for. Focus adds motion; it must not take
-        // the color away or the signal is gone.
+    test("a focused finished session breathes deeper, and stays green") {
+        // Green is the thing you came back for. The board rests on shallow-breath
+        // now, so focus deepens the motion; it must not take the color away or the
+        // signal is gone.
         let done = SessionState.done.defaultAppearance
         let focused = Viewing.focused(done, isFocused: true)
         expectEqual(focused.color, done.color, "the color changed")
-        expectEqual(focused.effect, .shallowBreath)
+        expectEqual(focused.effect, .breath)
         expect(focused.brightness > done.brightness, "a focused key should be a little brighter")
+        expect(focused.speed > 0, "breath at speed 0 does not move")
+    }
+
+    test("a focused solid key starts breathing") {
+        // The old rule, kept for anyone who configures a state back to solid.
+        let solid = Appearance(color: RGB(0x09B821), effect: .solid, brightness: 0.7, speed: 0)
+        let focused = Viewing.focused(solid, isFocused: true)
+        expectEqual(focused.effect, .shallowBreath)
         expect(focused.speed > 0, "shallow-breath at speed 0 does not move")
+        expect(focused.brightness > solid.brightness)
     }
 
     test("an unfocused key is untouched") {
@@ -299,16 +309,14 @@ func runFocusPulseTests() {
         }
     }
 
-    test("states that already breathe are left alone") {
-        // awaiting and error are the loudest things on the board. Changing how they
-        // move because you happen to be looking at one is motion competing with motion.
-        for state: SessionState in [.awaiting, .error, .stalled, .viewing] {
-            let base = state.defaultAppearance
-            expectEqual(
-                Viewing.focused(base, isFocused: true), base,
-                "\(state.rawValue) was re-animated by focus"
-            )
-        }
+    test("the loudest effects are left alone") {
+        // error already breathes deep and rainbow is the loudest thing the board can
+        // do. Changing how they move because you happen to be looking at one is
+        // motion competing with motion.
+        let deep = SessionState.error.defaultAppearance
+        expectEqual(Viewing.focused(deep, isFocused: true), deep, "error was re-animated by focus")
+        let rainbow = Appearance(color: RGB(0xFFFFFF), effect: .rainbow, brightness: 1, speed: 0.75)
+        expectEqual(Viewing.focused(rainbow, isFocused: true), rainbow, "rainbow was re-animated by focus")
     }
 
     test("a dark key stays dark") {

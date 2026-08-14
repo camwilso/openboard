@@ -196,8 +196,22 @@ struct ColorsPane: View {
 
     private var statesSection: some View {
         VStack(spacing: 0) {
+            // Column headers, aligned to StateRow's fixed widths. The swatch is the
+            // least discoverable control on the pane — it opens color, hex and speed —
+            // so the leading header says so instead of naming the column.
+            HStack(spacing: 12) {
+                GroupLabel("STATE — CLICK THE SWATCH FOR COLOR, HEX & SPEED")
+                Spacer(minLength: 8)
+                GroupLabel("EFFECT").frame(width: 130, alignment: .leading)
+                GroupLabel("BRIGHTNESS").frame(width: 90, alignment: .leading)
+                // Same footprint as the row's play button, so the columns line up.
+                Image(systemName: "play.fill").font(.system(size: 9)).hidden()
+            }
+            .padding(.top, 9)
+            .padding(.bottom, 3)
+
             ForEach(Array(SessionState.displayOrder.enumerated()), id: \.element) { index, state in
-                if index > 0 { Divider().opacity(0.3) }
+                Divider().opacity(index > 0 ? 0.3 : 0.15)
                 StateRow(state: state)
             }
         }
@@ -436,7 +450,14 @@ private struct StateRow: View {
             .buttonStyle(.plain)
             .help("Color, hex and speed")
             .popover(isPresented: $editing, arrowEdge: .bottom) {
+                // Re-injected by hand: popover content hosts in its own window, and
+                // macOS does not reliably carry custom environment values across
+                // that boundary. Without this the editor resolves the *default*
+                // BoardCommands — every closure a silent no-op — so a color picked
+                // here painted the swatch, saved nothing, and reverted on relaunch.
                 ColorEditor(state: state).padding(14)
+                    .environmentObject(board)
+                    .environment(\.boardCommands, commands)
             }
 
             VStack(alignment: .leading, spacing: 1) {
