@@ -11,8 +11,8 @@
 #   brew install --cask camwilso/tap/openboard
 #
 cask "openboard" do
-  version "0.1.0"
-  sha256 "945702d685576e44990e372934cf939ec0a2c4bb1149efb8bf57b63a7210ee93"
+  version "0.2.0"
+  sha256 "91d579c16775edeaf04f654411858061b0fe8c299faf4648a63a83cab74cb755"
 
   url "https://github.com/camwilso/openboard/releases/download/v#{version}/OpenBoard-#{version}.zip",
       verified: "github.com/camwilso/openboard/"
