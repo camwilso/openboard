@@ -81,10 +81,28 @@ public enum HookInstall {
         }
     }
 
-    /// The hook binary that ships beside the running app.
+    /**
+     The hook binary that ships beside the running app.
+
+     Derived from the *executable*, not from the bundle directory. `bundleURL` is the
+     `.app` for an installed copy but the enclosing folder for a bare executable, so
+     appending `Contents/MacOS/` to it produced a path that does not exist when the app
+     is run straight out of `swift build` — and Repair then wired every session on the
+     machine to it. The wiring looked correct in the audit, in settings.json and in the
+     log, and no hook ran again until someone noticed the board had gone quiet.
+
+     `executableURL`'s parent is `Contents/MacOS` inside a bundle and the build
+     directory otherwise, and `openboard-hook` is built into both. One rule, both
+     layouts, and no way for the debug path to be a fiction.
+     */
     public static func hookCommandPath(bundlePath: String? = nil) -> String {
         if let bundlePath {
             return bundlePath + "/Contents/MacOS/openboard-hook"
+        }
+        if let executable = Bundle.main.executableURL {
+            return executable
+                .deletingLastPathComponent()
+                .appendingPathComponent("openboard-hook").path
         }
         return Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/openboard-hook").path
     }
@@ -128,10 +146,16 @@ public enum HookInstall {
                 continue
             }
             let binary = executablePath(from: found)
-            if binary == expectedCommand {
-                statuses[event.name] = .ok
-            } else if !fileExists(binary) {
+            // Existence first, and the order is the whole point. Matching the expected
+            // path used to short-circuit this, so a hook wired to a binary that is not
+            // there reported `ok` as long as the running build agreed about where it
+            // should be — which is exactly the case that produces a silent board, and
+            // the one this parameter was added for. `stalePath` could only ever fire
+            // for somebody else's path, never our own.
+            if !fileExists(binary) {
                 statuses[event.name] = .stalePath(binary)
+            } else if binary == expectedCommand {
+                statuses[event.name] = .ok
             } else {
                 statuses[event.name] = .otherPath(binary)
             }
@@ -201,8 +225,15 @@ public enum HookInstall {
 
     public enum InstallError: Error, LocalizedError {
         case unreadable
+        case missingBinary(String)
         public var errorDescription: String? {
-            "settings.json could not be read as JSON — refusing to overwrite it."
+            switch self {
+            case .unreadable:
+                "settings.json could not be read as JSON — refusing to overwrite it."
+            case let .missingBinary(path):
+                "the hook helper is not at \(path) — refusing to wire every session to "
+                    + "a command that does not exist."
+            }
         }
     }
 
@@ -215,8 +246,16 @@ public enum HookInstall {
     @discardableResult
     public static func install(
         command: String,
-        url: URL? = nil
+        url: URL? = nil,
+        fileExists: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
     ) throws -> URL {
+        // Refused before anything is written, because the cost is asymmetric. A wiring
+        // that points nowhere runs on every hook of every session on the machine and
+        // fails silently by design — the helper exits 0 so a status light can never
+        // break a prompt — so nothing downstream will ever report this. Better to fail
+        // the button press, where somebody is watching.
+        guard fileExists(command) else { throw InstallError.missingBinary(command) }
+
         let target = url ?? settingsURL()
         var existing: [String: Any] = [:]
 

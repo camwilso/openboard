@@ -170,6 +170,44 @@ func runHookInstallTests() {
         expectEqual(hook["type"] as? String, "command")
     }
 
+    /*
+     The wiring that looks perfect and does nothing.
+
+     Observed, and not hypothetically: the app was run straight out of `swift build`,
+     where `bundleURL` is the build directory rather than an `.app`, so the expected
+     command was `…/debug/Contents/MacOS/openboard-hook` — a path that has never
+     existed. Repair wired all ten events to it. The audit compared the two strings,
+     found them equal, and reported `all 10 wired to this build` while every session on
+     the machine ran a command that was not there. Hooks fail silently by design, so
+     nothing else could have reported it.
+    */
+    test("a hook pointing at a binary that is not there is never healthy") {
+        let ghost = "/nowhere/OpenBoard.app/Contents/MacOS/openboard-hook"
+        let audit = HookInstall.audit(
+            settings: HookInstall.wiring(into: [:], command: ghost),
+            // The running build agrees about where it *should* be. That agreement is
+            // exactly what used to make this look fine.
+            expectedCommand: ghost,
+            fileExists: { _ in false }
+        )
+        expectEqual(audit.statuses["Stop"], .stalePath(ghost))
+        expect(!audit.isHealthy, "a wiring to nothing reported healthy")
+    }
+
+    test("install refuses a command that does not exist") {
+        // The button press is the last moment anyone is watching. Past it, a wiring to
+        // nowhere is invisible until someone notices the board has gone quiet.
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("ob-settings-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        expect(
+            (try? HookInstall.install(command: command, url: url, fileExists: { _ in false })) == nil,
+            "it wired every session to a missing binary"
+        )
+        expect(!FileManager.default.fileExists(atPath: url.path), "it wrote a settings file anyway")
+    }
+
     test("an unparseable settings file is refused rather than overwritten") {
         // Truncated or hand-broken JSON is still someone's configuration. Replacing it
         // with a fresh document would destroy every setting they have.
@@ -179,7 +217,14 @@ func runHookInstallTests() {
         let original = "{ \"model\": \"opus\", this is broken"
         try Data(original.utf8).write(to: url)
 
-        expect((try? HookInstall.install(command: command, url: url)) == nil, "it wrote anyway")
+        // `fileExists` stubbed so this fails for the reason it is testing. Without it
+        // the install is refused because /Applications/OpenBoard.app is not on the
+        // machine running the tests, and the assertion passes having never reached the
+        // JSON at all.
+        expect(
+            (try? HookInstall.install(command: command, url: url, fileExists: { _ in true })) == nil,
+            "it wrote anyway"
+        )
         expectEqual(try? String(contentsOf: url, encoding: .utf8), original, "the file was altered")
     }
 
@@ -191,7 +236,7 @@ func runHookInstallTests() {
         let url = dir.appendingPathComponent("settings.json")
         try Data("{\"model\":\"opus\"}".utf8).write(to: url)
 
-        try HookInstall.install(command: command, url: url)
+        try HookInstall.install(command: command, url: url, fileExists: { _ in true })
 
         let backups = (try FileManager.default.contentsOfDirectory(atPath: dir.path))
             .filter { $0.hasPrefix("settings.backup-") }
