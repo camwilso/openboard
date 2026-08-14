@@ -65,40 +65,60 @@ final class BoardController: ObservableObject {
     private var repaintWanted = false
 
     /**
-     Whether dictation is believed to be running — and *believed* is the word.
+     Whether dictation is believed to be running — believed, and now corroborated.
 
-     It cannot be detected. `voiceTap` taps space, which starts dictation or stops it
-     depending on what is already happening, and nothing reports back: not Claude Code,
-     not macOS. There is no readback here any more than there is for the LEDs.
-
-     So this is our own toggle, counted from our own key presses, and it is wrong in two
-     knowable ways. Space only triggers voice when the chat input is **empty** — with
-     text in it the same tap types a space and dictation never starts. And dictation can
-     be stopped by anything else on the machine, Escape included, which we never see.
-
-     Both are handled by refusing to trust it for long: a submitted prompt ends it,
-     because that is what dictation was for, and `voiceLimit` ends it regardless. A ring
-     stuck rainbow because a belief went stale is exactly the class of lie this board
-     exists not to tell.
+     Claude Code still reports nothing back: the press is the only way to know
+     recording was *asked for*. What changed is that the ring is painted from the
+     microphone's own running state (`MicActivity`, the truth behind the orange
+     menu-bar dot), gated by the belief. A tap never lights the ring by itself —
+     the rainbow arrives when the mic actually starts, and leaves the moment it
+     stops, however it was stopped. The conjunction and its bounds live in
+     `VoiceSignal`; this class owns the wiring and the repaints.
      */
-    private var voiceSince: Date?
-    /// Long enough for a real dictation, short enough that a wrong belief is an
-    /// annoyance rather than a mystery.
-    private let voiceLimit: TimeInterval = 180
+    private var voice = VoiceSignal()
+    private let micActivity = MicActivity()
+    /// Sweeps a belief whose grace window expired with the mic never starting — the
+    /// tap typed a space. Nothing was lit, so this is bookkeeping, not a repaint.
+    private var voiceGraceTask: Task<Void, Never>?
 
     private var voiceIsActive: Bool {
         if pushToTalk.isHeld { return true }
-        guard let voiceSince else { return false }
-        guard Date().timeIntervalSince(voiceSince) < voiceLimit else { return false }
-        return true
+        return voice.isActive()
     }
 
     private func setVoice(_ active: Bool, why: String) {
         let was = voiceIsActive
-        voiceSince = active ? Date() : nil
-        guard was != active else { return }
-        Log.write("voice: \(active ? "on" : "off") (\(why))")
+        voiceGraceTask?.cancel()
+        if active {
+            voice.begin()
+            // A mic already running counts as confirmation now: dictation joining an
+            // ongoing recording cannot flip a flag that is already up, so this is the
+            // only chance to see it. The cost is the old degraded bounds if the tap
+            // failed — never worse than the belief-only version.
+            if micActivity.isRunning { _ = voice.micChanged(running: true) }
+            scheduleVoiceGraceSweep()
+            Log.write(
+                voice.micConfirmed
+                    ? "voice: on (\(why), mic already running)"
+                    : "voice: believed (\(why)) — awaiting mic"
+            )
+        } else {
+            voice.end()
+            Log.write("voice: off (\(why))")
+        }
+        guard was != voiceIsActive else { return }
         Task { await paint() }
+    }
+
+    private func scheduleVoiceGraceSweep() {
+        let grace = voice.grace
+        voiceGraceTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(grace) + .milliseconds(200))
+            guard let self, !Task.isCancelled else { return }
+            guard self.voice.since != nil, !self.voice.micConfirmed else { return }
+            self.voice.end()
+            Log.write("voice: belief expired (mic never started — the tap typed a space)")
+        }
     }
 
     /// While a show owns the ring, the re-assert loop must leave it alone: each step
@@ -309,6 +329,18 @@ final class BoardController: ObservableObject {
                 : "hooks: PROBLEM — \(audit.problems.map { "\($0) \(audit.statuses[$0].map(String.init(describing:)) ?? "?")" }.joined(separator: ", "))"
         )
 
+        // Only when the preference asks for the chord: a missing binding then means
+        // the voice key does nothing at all, which reads as a dead key, not a
+        // missing line in a file the user may never have opened.
+        if prefs.voiceChord {
+            let chord = KeybindingInstall.audit(document: KeybindingInstall.load())
+            Log.write(
+                chord.isHealthy
+                    ? "keybinding: ⌃Y wired to \(KeybindingInstall.action)"
+                    : "keybinding: PROBLEM — ⌃Y \(chord.status), voice key is dead until repaired in Settings"
+            )
+        }
+
         applyPreferences()
 
         // Restore the board before anything reads it, so a session keeps the key it
@@ -328,9 +360,26 @@ final class BoardController: ObservableObject {
 
         startFocusWatcher()
         startKeyInterception()
+        startMicWatcher()
         startHookServer()
         startResident()
         reconnect()
+    }
+
+    /// Feed mic transitions into the voice belief. The callback arrives on
+    /// MicActivity's own queue; everything stateful happens back on the main actor.
+    private func startMicWatcher() {
+        micActivity.watch { [weak self] running in
+            Task { @MainActor in
+                guard let self else { return }
+                let was = self.voiceIsActive
+                let reason = self.voice.micChanged(running: running)
+                let now = self.voiceIsActive
+                guard now != was else { return }
+                Log.write("voice: \(now ? "on" : "off") (\(reason ?? "mic"))")
+                await self.paint()
+            }
+        }
     }
 
     // MARK: - key interception
@@ -473,8 +522,15 @@ final class BoardController: ObservableObject {
             Log.write(result.ok ? "key \(key): opened a Terminal tab" : "key \(key): \(result.detail)")
 
         case .voiceTap:
-            let result = Actions.tapVoice()
-            Log.write(result.ok ? "key \(key): voice tap" : "key \(key): \(result.detail)")
+            // The chord invokes `voice:pushToTalk` directly and types nothing; space
+            // is the fallback that also types spaces when the input is not empty.
+            let chord = model.preferences.voiceChord
+            let result = chord ? Actions.tapVoiceChord() : Actions.tapVoice()
+            Log.write(
+                result.ok
+                    ? "key \(key): voice tap (\(chord ? "⌃Y" : "space"))"
+                    : "key \(key): \(result.detail)"
+            )
             // The same tap starts and stops it, so the belief flips with the key.
             if result.ok { setVoice(!voiceIsActive, why: "tapped") }
 
@@ -652,7 +708,7 @@ final class BoardController: ObservableObject {
          Above every mode, `off` included: this is not a summary of the board, it is
          feedback that the machine is listening to you right now — the one moment where
          a light that is otherwise dark by design has something urgent to say. It ends
-         the moment the belief does, and the belief is bounded. See `voiceSince`.
+         the moment the belief does, and the belief is bounded. See `VoiceSignal`.
         */
         if model.preferences.ambient.voiceRainbow, voiceIsActive {
             lastAmbientLog = Log.changed("ring", last: lastAmbientLog, to: "voice: rainbow")

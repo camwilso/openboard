@@ -76,6 +76,12 @@ public struct Preferences: Equatable, Sendable {
     /// should not happen. Off restores the old safety net at a fixed 15 minutes.
     public var holdAttention: Bool
     public var maxHoldSeconds: Int
+    /// Whether the voice keys drive dictation through the `voice:pushToTalk`
+    /// keybinding chord (⌃Y) instead of tapping space. Space is overloaded — with
+    /// text in the chat input it types a space instead of starting dictation — and
+    /// a bound chord types nothing, ever. Off by default because it only works once
+    /// the chord is added to `~/.claude/keybindings.json`.
+    public var voiceChord: Bool
 
     public struct Encoder: Equatable, Sendable {
         /// `scroll-up` or `scroll-down`, per direction.
@@ -294,7 +300,8 @@ public struct Preferences: Equatable, Sendable {
         staleHours: Int,
         doneDecaySeconds: Int,
         holdAttention: Bool = true,
-        maxHoldSeconds: Int
+        maxHoldSeconds: Int,
+        voiceChord: Bool = false
     ) {
         self.states = states
         self.actionKeys = actionKeys
@@ -314,6 +321,7 @@ public struct Preferences: Equatable, Sendable {
         self.doneDecaySeconds = doneDecaySeconds
         self.holdAttention = holdAttention
         self.maxHoldSeconds = maxHoldSeconds
+        self.voiceChord = voiceChord
     }
 
     // MARK: - typed accessors
@@ -517,6 +525,7 @@ extension Preferences {
             result.holdAttention = legacy <= 0 || legacy == oldDefault
         }
         if let value = json["maxHoldSeconds"] as? Int { result.maxHoldSeconds = value }
+        if let value = json["voiceChord"] as? Bool { result.voiceChord = value }
 
         return result
     }
@@ -611,6 +620,7 @@ extension Preferences {
             "doneDecaySeconds": doneDecaySeconds,
             "holdAttention": holdAttention,
             "maxHoldSeconds": maxHoldSeconds,
+            "voiceChord": voiceChord,
         ]
     }
 }

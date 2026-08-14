@@ -69,6 +69,19 @@ enum Actions {
         run("tell application \"System Events\" to key code \(keySpace)")
     }
 
+    private static let keyY: CGKeyCode = 16
+
+    /**
+     Tap ⌃Y once — the chord bound to `voice:pushToTalk` in keybindings.json.
+
+     The way out of space's dual role: a bound chord invokes the action and types
+     nothing, whatever is already in the chat input. Only useful once the binding
+     exists, which is why `voiceChord` is a preference and not the default.
+     */
+    static func tapVoiceChord() -> Result {
+        sendKey(keyY, flags: .maskControl)
+    }
+
     /// Toggle voice mode by typing `/voice`.
     static func toggleVoice() -> Result {
         let typed = typeSnippet("/voice")
