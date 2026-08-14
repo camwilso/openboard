@@ -6,6 +6,41 @@
     <description>Updates to OpenBoard.</description>
     <language>en</language>
     <item>
+      <title>0.2.0</title>
+      <pubDate>Fri, 14 Aug 2026 08:42:07 -0400</pubDate>
+      <sparkle:version>59</sparkle:version>
+      <sparkle:shortVersionString>0.2.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+## What's new in v0.2.0
+
+### The voice light tells the truth
+The dictation rainbow used to light on the keypress and turn off on a 180-second timer. It now follows the microphone itself (CoreAudio's device-running state — the same truth behind the orange menu-bar dot): the ring stays dark until recording actually starts, and goes dark the moment it stops, however it was stopped. A tap that only typed a space never lights it at all.
+
+### A voice key that can never type a space
+New in Settings → Device: "Tap ⌃Y instead of space." Space is overloaded — with text in the chat input it types a space instead of starting dictation. The ⌃Y chord invokes Claude Code's `voice:pushToTalk` action directly and types nothing, whatever the input holds. Turning the toggle on writes the one-line binding into `~/.claude/keybindings.json` for you (with a backup, and it never touches a ⌃Y you bound to something else). New Claude Code sessions pick it up on start.
+
+### Colors that actually save
+Color and speed edits made in the swatch popover silently never persisted — they reverted on relaunch, on every machine. Fixed. The states table also gained column headers, and the swatch's hidden powers (color, hex, speed) are now labeled.
+
+### One visual language
+Every state now defaults to shallow-breath, with two exceptions that mean something: `error` breathes deep, and `ended` stays dark. Focus adapts: the key you're looking at breathes deeper than the board around it. Your saved settings are untouched.
+
+### Secure Keyboard Entry, named
+When another app holds Secure Keyboard Entry (issue #2), the pad's keys go silent and OpenBoard used to blame Input Monitoring — a permission that was actually granted. It now names the real cause and the app holding it, including the stale-holder case where only a log-out clears it.
+
+### From contributors
+- iTerm2 support for press-to-jump (#4, @ebowman)
+- Sessions with running background subagents stay working-blue instead of flipping to done-green (#5, @ebowman)
+
+470 tests, all passing. Full diff: v0.1.0...v0.2.0
+      ]]></description>
+      <enclosure
+        url="https://github.com/camwilso/openboard/releases/download/v0.2.0/OpenBoard-0.2.0.zip"
+        type="application/octet-stream"
+        sparkle:edSignature="vcQntSBTPo60NaD9xoaSrw2riBlBvjSQ+OwEuOqW1NJKcnv8El8CBcSHogd09amfRhlpeNBKQJ2MXtzonHkmBw==" length="3973625" />
+    </item>
+    <item>
       <title>0.1.0</title>
       <pubDate>Sun, 9 Aug 2026 18:25:30 -0400</pubDate>
       <sparkle:version>41</sparkle:version>
