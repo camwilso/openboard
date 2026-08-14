@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import Foundation
 import IOKit.hid
 import ApplicationServices
@@ -148,6 +149,98 @@ public enum PermissionProbe {
         case kIOHIDAccessTypeDenied: .denied
         default: .unknown
         }
+    }
+
+    /**
+     Whether Secure Keyboard Entry is blocking keyboard-class HID system-wide.
+
+     When another app engages it (iTerm2 and Terminal do so automatically for
+     password-style prompts), opens and writes to the pad fail with
+     `kIOReturnNotPermitted` — the same error code a revoked Input Monitoring grant
+     produces. Without this probe the two are indistinguishable, and the app blamed
+     Input Monitoring for both, sending people to a settings pane where the switch
+     was already on. The remedy is entirely different: finish or quit whatever
+     engaged Secure Input, not System Settings.
+
+     Not part of `Report`: this is a transient claim by another process, not a grant
+     the user can flip, and a permissions row that comes and goes with someone
+     else's password prompt would read as noise.
+     */
+    public struct SecureInput: Sendable, Equatable {
+        public let active: Bool
+        /// The pid the window server records as the claim holder, if it names one.
+        public let holderPID: Int?
+        /// The holder's app name, if that pid resolves to a running process.
+        public let holderName: String?
+
+        public init(active: Bool, holderPID: Int?, holderName: String?) {
+            self.active = active
+            self.holderPID = holderPID
+            self.holderName = holderName
+        }
+
+        /**
+         The holder, phrased for a log line or status message.
+
+         A pid that no longer resolves to a process is called out explicitly: a
+         Secure Input claim can outlive its holder, and nothing short of logging out
+         clears a stale one — the one case where naming the pid honestly saves a
+         long chase through settings panes and USB cables.
+         */
+        public var holderDescription: String {
+            if let holderName { return holderName }
+            if let holderPID {
+                return "pid \(holderPID) (no longer running — a stale claim; log out and back in to clear it)"
+            }
+            return "another app"
+        }
+    }
+
+    public static func secureInput() -> SecureInput {
+        guard IsSecureEventInputEnabled() else {
+            return SecureInput(active: false, holderPID: nil, holderName: nil)
+        }
+        let pid = secureInputHolderPID()
+        let name = pid.flatMap { holder in
+            NSRunningApplication(processIdentifier: pid_t(holder))?.localizedName
+                ?? processName(forPID: holder)
+        }
+        return SecureInput(active: true, holderPID: pid, holderName: name)
+    }
+
+    /// The window server records the claiming pid on the registry root's console
+    /// session — the same value `ioreg -l | grep SecureInput` shows. Read directly
+    /// rather than shelling out; a probe that spawns a process per check is a poll
+    /// cost, and this runs from the presence loop.
+    private static func secureInputHolderPID() -> Int? {
+        let entry = IORegistryEntryFromPath(kIOMainPortDefault, "IOService:/")
+        guard entry != MACH_PORT_NULL else { return nil }
+        defer { IOObjectRelease(entry) }
+        guard let users = IORegistryEntryCreateCFProperty(
+            entry, "IOConsoleUsers" as CFString, kCFAllocatorDefault, 0
+        )?.takeRetainedValue() as? [[String: Any]] else { return nil }
+        for user in users {
+            if let pid = user["kCGSSessionSecureInputPID"] as? Int { return pid }
+        }
+        return nil
+    }
+
+    /// `ps` fallback for a non-GUI holder (`sudo` in a terminal is the common one) —
+    /// `NSRunningApplication` only knows about apps with a UI session.
+    private static func processName(forPID pid: Int) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/ps")
+        process.arguments = ["-o", "comm=", "-p", String(pid)]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        try? process.run()
+        process.waitUntilExit()
+        let raw = String(
+            data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8
+        )?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !raw.isEmpty else { return nil }
+        return raw.split(separator: "/").last.map(String.init)
     }
 
     /**

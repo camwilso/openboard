@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import Foundation
 import OpenBoardKit
 
@@ -72,6 +73,65 @@ func runPermissionCoverageTests() {
         )
         expect(!noInput.coreIsReady)
         expectEqual(noInput.missing, ["Input Monitoring"])
+    }
+}
+
+/**
+ Secure Keyboard Entry produces the same kIOReturnNotPermitted as a revoked Input
+ Monitoring grant, and the app used to blame Input Monitoring for both — sending
+ people to a settings pane where the switch was already on. The probe is what lets
+ the two be told apart, so it gets its own coverage.
+ */
+func runSecureInputTests() {
+    test("secure input holder is described by name, stale pid, or honest ignorance") {
+        // The stale-pid phrasing is load-bearing: a Secure Input claim can outlive
+        // its holder, nothing short of a logout clears it, and naming the dead pid
+        // is what turns a multi-hour chase into a one-line diagnosis.
+        let named = PermissionProbe.SecureInput(active: true, holderPID: 42, holderName: "iTerm2")
+        expectEqual(named.holderDescription, "iTerm2")
+
+        let stale = PermissionProbe.SecureInput(active: true, holderPID: 42, holderName: nil)
+        expect(stale.holderDescription.contains("pid 42"), "the dead holder's pid must be named")
+        expect(stale.holderDescription.contains("log out"), "the only remedy must be stated")
+
+        let anonymous = PermissionProbe.SecureInput(active: true, holderPID: nil, holderName: nil)
+        expectEqual(anonymous.holderDescription, "another app")
+    }
+
+    test("the probe observes this process engaging and releasing secure input") {
+        // End to end against the real window server: engage Secure Keyboard Entry
+        // ourselves, watch the probe flip, release it, watch it clear. Guarded so a
+        // machine where someone else already holds the claim (a password prompt up
+        // right now) or a session that refuses the engage (possible headless) skips
+        // rather than fails — the formatting test above still ran either way.
+        guard !IsSecureEventInputEnabled() else { return }
+        guard EnableSecureEventInput() == noErr else { return }
+        let engaged = PermissionProbe.secureInput()
+        // Enable/Disable are refcounted per process: exactly one disable, before any
+        // assertion can bail out and leave the claim stuck for the rest of the suite.
+        let released = DisableSecureEventInput()
+        expect(engaged.active, "the probe must see our own engagement")
+        expectEqual(released, noErr)
+        expect(!PermissionProbe.secureInput().active, "the probe must clear on release")
+    }
+
+    test("BoardController attributes refusals with the probe, in both paths") {
+        // `BoardController.swift` lives in the app target this suite cannot import —
+        // same trade FocusITerm2Tests makes. Source-scan: the disambiguation must
+        // consult the probe on the open path (publishDeviceStatus) and the write path
+        // (the paint catch), or the misattribution this exists to fix is back.
+        let boardController = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()      // OpenBoardTests
+            .deletingLastPathComponent()      // Sources
+            .appendingPathComponent("OpenBoard")
+            .appendingPathComponent("BoardController.swift")
+        let source = (try? String(contentsOf: boardController, encoding: .utf8)) ?? ""
+        expect(!source.isEmpty, "BoardController.swift did not read — the scan is checking nothing")
+        expectEqual(
+            source.components(separatedBy: "PermissionProbe.secureInput()").count - 1, 2,
+            "both the open-path and write-path attributions must consult the probe"
+        )
+        expect(source.contains("secureInputBlocked"), "the open path must surface the dedicated status")
     }
 }
 

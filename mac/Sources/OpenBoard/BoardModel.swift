@@ -234,6 +234,10 @@ enum DeviceStatus: Equatable {
     case bluetoothOff
     /// Visible and permitted, but another process holds it.
     case inUseElsewhere
+    /// Secure Keyboard Entry is engaged, blocking keyboard-class HID system-wide.
+    /// Transient and not this app's grant — the remedy is whatever engaged it, not
+    /// System Settings, which is why it is not folded into `permissionDenied`.
+    case secureInputBlocked(holder: String)
     /// Found, but macOS refused access. Per-app, and needs a restart after granting.
     case permissionDenied(missing: [String])
     /// No vendor interface at all.
@@ -259,6 +263,7 @@ enum DeviceStatus: Equatable {
         case .bluetoothDisconnected: "Not connected over Bluetooth"
         case .bluetoothOff: "Bluetooth is off"
         case .inUseElsewhere: "Something else is holding the pad"
+        case .secureInputBlocked: "Secure Keyboard Entry is blocking the pad"
         case .permissionDenied: "macOS denied access"
         case .notFound: "No \(name) found"
         }
@@ -283,6 +288,9 @@ enum DeviceStatus: Equatable {
         case .inUseElsewhere:
             "The pad is here and OpenBoard is allowed to read it, but something else has it open. "
                 + "An older copy of OpenBoard still running is the usual cause."
+        case let .secureInputBlocked(holder):
+            "\(holder) has engaged Secure Keyboard Entry, which blocks keyboard HID for every app. "
+                + "Your Input Monitoring grant is fine — finish or quit whatever engaged it and the pad comes back."
         }
     }
 }

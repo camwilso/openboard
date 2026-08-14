@@ -64,6 +64,7 @@ runTurnStateTests()
 runToolProgressTests()
 runPermissionCoverageTests()
 runPermissionStatusTests()
+runSecureInputTests()
 runSetupProgressTests()
 runClaudeVoiceTests()
 
