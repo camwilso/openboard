@@ -329,6 +329,18 @@ final class BoardController: ObservableObject {
                 : "hooks: PROBLEM — \(audit.problems.map { "\($0) \(audit.statuses[$0].map(String.init(describing:)) ?? "?")" }.joined(separator: ", "))"
         )
 
+        // Only when the preference asks for the chord: a missing binding then means
+        // the voice key does nothing at all, which reads as a dead key, not a
+        // missing line in a file the user may never have opened.
+        if prefs.voiceChord {
+            let chord = KeybindingInstall.audit(document: KeybindingInstall.load())
+            Log.write(
+                chord.isHealthy
+                    ? "keybinding: ⌃Y wired to \(KeybindingInstall.action)"
+                    : "keybinding: PROBLEM — ⌃Y \(chord.status), voice key is dead until repaired in Settings"
+            )
+        }
+
         applyPreferences()
 
         // Restore the board before anything reads it, so a session keeps the key it

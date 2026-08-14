@@ -24,6 +24,8 @@ struct DevicePane: View {
     @State private var allGranted = false
     @State private var requestingAutomation = false
     @State private var automationNote: String?
+    @State private var keybinding = KeybindingInstall.Audit(status: .missing, fileExists: false)
+    @State private var chordNote: String?
 
     var body: some View {
         ScrollView {
@@ -178,6 +180,9 @@ struct DevicePane: View {
                 if !hooks.isHealthy {
                     hooksProblem
                 }
+
+                PaneHeader("The voice key", "How a voice tap reaches Claude Code.")
+                voiceChordSection
 
                 PaneHeader("Starting up", "Setting OpenBoard up, and keeping it running.")
                 VStack(alignment: .leading, spacing: 8) {
@@ -552,6 +557,78 @@ struct DevicePane: View {
         hooks = HookInstall.audit(
             settings: HookInstall.loadSettings(),
             expectedCommand: HookInstall.hookCommandPath()
+        )
+        keybinding = KeybindingInstall.audit(document: KeybindingInstall.load())
+    }
+
+    /**
+     The one voice setting that is genuinely a choice.
+
+     Space starts dictation only when the chat input is empty; otherwise the tap
+     types a space. The ⌃Y chord invokes `voice:pushToTalk` directly and types
+     nothing — but needs its binding in `~/.claude/keybindings.json`, which is
+     written when the toggle goes on (backup first, nothing else touched). A chord
+     the user already bound to something else is reported, never overwritten.
+     */
+    private var voiceChordSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle(isOn: voiceChordBinding) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Tap ⌃Y instead of space").font(.system(size: 12.5))
+                    Text("Space types a space when the input already has text. "
+                        + "⌃Y starts dictation and types nothing — OpenBoard adds "
+                        + "the one-line binding to ~/.claude/keybindings.json for you.")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .toggleStyle(.switch)
+
+            if board.preferences.voiceChord, case .conflict(let other) = keybinding.status {
+                Text("⌃Y is already bound to \(other) in your keybindings — the voice "
+                    + "key will do nothing until that binding is freed or changed here.")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Color(RGB(0xFF6A00)))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let chordNote {
+                Text(chordNote).font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+        }
+        .padding(12)
+        .background(.quaternary.opacity(0.35), in: .rect(cornerRadius: 10))
+    }
+
+    private var voiceChordBinding: Binding<Bool> {
+        Binding(
+            get: { board.preferences.voiceChord },
+            set: { enabled in
+                chordNote = nil
+                if enabled {
+                    let audit = KeybindingInstall.audit(document: KeybindingInstall.load())
+                    if audit.status == .missing {
+                        do {
+                            try KeybindingInstall.install()
+                            // Same caveat as hooks, same reason: keybindings load
+                            // when a session starts, so the ones already open keep
+                            // tapping into the void.
+                            chordNote = "Bound ⌃Y to voice:pushToTalk. New Claude Code "
+                                + "sessions pick it up — ones already open keep their "
+                                + "old bindings until restarted."
+                        } catch {
+                            chordNote = error.localizedDescription
+                            refresh()
+                            return  // The pref stays off: a chord that reaches nothing
+                                    // is a dead key wearing a setting's clothes.
+                        }
+                    }
+                }
+                board.updatePreferences { $0.voiceChord = enabled }
+                commands.bindingsChanged()
+                refresh()
+            }
         )
     }
 

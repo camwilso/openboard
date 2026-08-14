@@ -35,6 +35,7 @@ runRowDetailTests()
 // Hooks: the only way a session reaches the board.
 runHookTests()
 runHookInstallTests()
+runKeybindingInstallTests()
 runHookOmissionTests()
 runEventGatingTests()
 runToolEventTests()
