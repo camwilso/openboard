@@ -2,38 +2,37 @@ import Foundation
 import OpenBoardKit
 
 /**
- The belief, corroborated.
+ The belief, corroborated — and dark until it is.
 
  `VoiceSignal` is where a keypress belief meets the microphone's actual running
- state, and every transition here is one the ring will paint. The clock is injected
- throughout, so the cases that used to need a stopwatch — grace expiry, the
- 180-second backstop — are plain assertions.
+ state, and the mic is the half that paints: a tap alone never lights the ring,
+ because a tap with text in the chat input types a space and starts nothing. The
+ clock is injected throughout, so the cases that used to need a stopwatch — grace
+ expiry, the 180-second backstop — are plain assertions.
  */
 func runVoiceSignalTests() {
     let t0 = Date(timeIntervalSinceReferenceDate: 1_000_000)
 
-    test("a fresh belief shows during grace, unconfirmed") {
+    test("a fresh belief is dark — a request is not a recording") {
         var signal = VoiceSignal()
         signal.begin(now: t0)
-        expect(signal.isActive(now: t0))
-        expect(signal.isActive(now: t0.addingTimeInterval(2.9)))
-        expectEqual(signal.micConfirmed, false)
+        expectEqual(signal.isActive(now: t0), false)
+        expect(signal.isAwaitingMic(now: t0))
     }
 
-    test("no mic within grace puts the light out") {
-        // The tap typed a space instead of starting dictation: a blink, not three
-        // minutes of rainbow.
+    test("the mic starting is what lights it") {
         var signal = VoiceSignal()
         signal.begin(now: t0)
-        expectEqual(signal.isActive(now: t0.addingTimeInterval(3)), false)
-    }
-
-    test("a mic start confirms, and the belief outlives grace") {
-        var signal = VoiceSignal()
-        signal.begin(now: t0)
-        expectEqual(signal.micChanged(running: true, now: t0.addingTimeInterval(1)), nil)
-        expect(signal.micConfirmed)
+        expectEqual(signal.micChanged(running: true, now: t0.addingTimeInterval(1)), "mic started")
+        expect(signal.isActive(now: t0.addingTimeInterval(1)))
         expect(signal.isActive(now: t0.addingTimeInterval(60)))
+    }
+
+    test("no mic within grace and the belief is judged a typed space") {
+        var signal = VoiceSignal()
+        signal.begin(now: t0)
+        expectEqual(signal.isAwaitingMic(now: t0.addingTimeInterval(3)), false)
+        expectEqual(signal.isActive(now: t0.addingTimeInterval(3)), false)
     }
 
     test("a mic stop ends a confirmed belief, whoever stopped it") {
@@ -48,18 +47,20 @@ func runVoiceSignalTests() {
 
     test("a mic stop before confirmation is someone else's, and ignored") {
         // Another app releasing the mic during our grace window says nothing about
-        // dictation — the grace window is already the judge of that case.
+        // dictation — the window stays open for the real start.
         var signal = VoiceSignal()
         signal.begin(now: t0)
         expectEqual(signal.micChanged(running: false, now: t0.addingTimeInterval(1)), nil)
+        expect(signal.isAwaitingMic(now: t0.addingTimeInterval(2)))
+        expectEqual(signal.micChanged(running: true, now: t0.addingTimeInterval(2)), "mic started")
         expect(signal.isActive(now: t0.addingTimeInterval(2)))
     }
 
-    test("a mic start after grace expiry does not resurrect a dead tap") {
+    test("a mic start after grace expiry does not light a dead tap") {
         // A call starting minutes after a failed tap must not light the ring.
         var signal = VoiceSignal()
         signal.begin(now: t0)
-        _ = signal.micChanged(running: true, now: t0.addingTimeInterval(30))
+        expectEqual(signal.micChanged(running: true, now: t0.addingTimeInterval(30)), nil)
         expectEqual(signal.micConfirmed, false)
         expectEqual(signal.isActive(now: t0.addingTimeInterval(30)), false)
     }
@@ -79,6 +80,7 @@ func runVoiceSignalTests() {
         expectEqual(signal.micChanged(running: true, now: t0), nil)
         expectEqual(signal.micChanged(running: false, now: t0), nil)
         expectEqual(signal.isActive(now: t0), false)
+        expectEqual(signal.isAwaitingMic(now: t0), false)
     }
 
     test("a new belief starts unconfirmed, whatever the last one saw") {
@@ -88,6 +90,7 @@ func runVoiceSignalTests() {
         signal.end()
         signal.begin(now: t0.addingTimeInterval(10))
         expectEqual(signal.micConfirmed, false)
-        expect(signal.isActive(now: t0.addingTimeInterval(10)))
+        expectEqual(signal.isActive(now: t0.addingTimeInterval(10)), false)
+        expect(signal.isAwaitingMic(now: t0.addingTimeInterval(10)))
     }
 }

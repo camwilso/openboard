@@ -68,17 +68,17 @@ final class BoardController: ObservableObject {
      Whether dictation is believed to be running — believed, and now corroborated.
 
      Claude Code still reports nothing back: the press is the only way to know
-     recording was *asked for*. What changed is that the belief is checked against the
+     recording was *asked for*. What changed is that the ring is painted from the
      microphone's own running state (`MicActivity`, the truth behind the orange
-     menu-bar dot). A tap that never started dictation goes dark when the grace window
-     expires unconfirmed, and a real dictation goes dark the moment the mic stops —
-     however it was stopped. The conjunction and its bounds live in `VoiceSignal`;
-     this class owns the wiring and the repaints.
+     menu-bar dot), gated by the belief. A tap never lights the ring by itself —
+     the rainbow arrives when the mic actually starts, and leaves the moment it
+     stops, however it was stopped. The conjunction and its bounds live in
+     `VoiceSignal`; this class owns the wiring and the repaints.
      */
     private var voice = VoiceSignal()
     private let micActivity = MicActivity()
-    /// Nothing repaints on its own when the grace window expires, so a failed tap
-    /// would stay rainbow until the next event. This makes it a blink instead.
+    /// Sweeps a belief whose grace window expired with the mic never starting — the
+    /// tap typed a space. Nothing was lit, so this is bookkeeping, not a repaint.
     private var voiceGraceTask: Task<Void, Never>?
 
     private var voiceIsActive: Bool {
@@ -96,24 +96,28 @@ final class BoardController: ObservableObject {
             // only chance to see it. The cost is the old degraded bounds if the tap
             // failed — never worse than the belief-only version.
             if micActivity.isRunning { _ = voice.micChanged(running: true) }
-            scheduleVoiceGraceRepaint()
+            scheduleVoiceGraceSweep()
+            Log.write(
+                voice.micConfirmed
+                    ? "voice: on (\(why), mic already running)"
+                    : "voice: believed (\(why)) — awaiting mic"
+            )
         } else {
             voice.end()
+            Log.write("voice: off (\(why))")
         }
-        guard was != active else { return }
-        Log.write("voice: \(active ? "on" : "off") (\(why))")
+        guard was != voiceIsActive else { return }
         Task { await paint() }
     }
 
-    private func scheduleVoiceGraceRepaint() {
+    private func scheduleVoiceGraceSweep() {
         let grace = voice.grace
         voiceGraceTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(grace) + .milliseconds(200))
             guard let self, !Task.isCancelled else { return }
             guard self.voice.since != nil, !self.voice.micConfirmed else { return }
             self.voice.end()
-            Log.write("voice: off (mic never started)")
-            await self.paint()
+            Log.write("voice: belief expired (mic never started — the tap typed a space)")
         }
     }
 
@@ -357,10 +361,11 @@ final class BoardController: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 let was = self.voiceIsActive
-                if let reason = self.voice.micChanged(running: running) {
-                    Log.write("voice: off (\(reason))")
-                }
-                if self.voiceIsActive != was { await self.paint() }
+                let reason = self.voice.micChanged(running: running)
+                let now = self.voiceIsActive
+                guard now != was else { return }
+                Log.write("voice: \(now ? "on" : "off") (\(reason ?? "mic"))")
+                await self.paint()
             }
         }
     }
