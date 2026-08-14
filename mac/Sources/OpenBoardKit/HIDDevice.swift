@@ -222,8 +222,9 @@ public final class HIDDevice: @unchecked Sendable {
         let result = IOHIDDeviceOpen(target, IOOptionBits(kIOHIDOptionsTypeNone))
         guard result == kIOReturnSuccess else {
             IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))
-            // 0xE00002E2 — the Input Monitoring denial, and by far the most common
-            // failure. Anything else is genuinely unexpected.
+            // 0xE00002E2 — an Input Monitoring denial or Secure Keyboard Entry;
+            // this layer cannot tell which (see CodexError.accessDenied). Anything
+            // else is genuinely unexpected.
             throw result == kIOReturnNotPermitted ? CodexError.accessDenied : CodexError.noVendorInterface
         }
 

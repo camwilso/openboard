@@ -1431,10 +1431,18 @@ final class BoardController: ObservableObject {
         // Do not guess. The pad being visible but unopenable was reported as
         // "Input Monitoring" regardless of whether that permission was actually the
         // problem, which sends people to a settings pane where the switch is already on.
+        // Grant checked first: it is the durable problem, and the one with a settings
+        // fix. Secure Keyboard Entry is checked next — it produces the identical
+        // kIOReturnNotPermitted, but the remedy is whatever engaged it, not settings.
         let access = PermissionProbe.inputMonitoring()
-        model.apply(device: access.isGranted
-            ? .inUseElsewhere
-            : .permissionDenied(missing: ["Input Monitoring"]))
+        if !access.isGranted {
+            model.apply(device: .permissionDenied(missing: ["Input Monitoring"]))
+            return
+        }
+        let secure = PermissionProbe.secureInput()
+        model.apply(device: secure.active
+            ? .secureInputBlocked(holder: secure.holderDescription)
+            : .inUseElsewhere)
     }
 
     // MARK: - painting
@@ -1566,7 +1574,19 @@ final class BoardController: ObservableObject {
             // Never throw out of the loop: a failed repaint is a missed light, but a
             // dead loop is a board that stays wrong until someone restarts the app.
             // Logged, though — a silent swallow here is what made this undiagnosable.
-            lastPaintLog = Log.changed("paint", last: lastPaintLog, to: "FAILED — \(error.localizedDescription)")
+            //
+            // kIOReturnNotPermitted on an already-open handle is the Secure Keyboard
+            // Entry signature — the periodic poll's disambiguation only covers the
+            // *open* path, so a mid-session engage surfaces here first and used to be
+            // logged as an Input Monitoring denial the settings pane would contradict.
+            var failure = error.localizedDescription
+            if case CodexError.accessDenied = error {
+                let secure = PermissionProbe.secureInput()
+                if secure.active {
+                    failure += " — Secure Keyboard Entry is active (\(secure.holderDescription)), not an Input Monitoring problem"
+                }
+            }
+            lastPaintLog = Log.changed("paint", last: lastPaintLog, to: "FAILED — \(failure)")
             /*
              A failed write means this handle is dead, whatever the survey says.
 

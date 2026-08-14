@@ -284,7 +284,11 @@ public enum CodexError: Error, LocalizedError {
     case badSlot(Int)
     case notConnected
     case timedOut(String)
-    /// The device was found but macOS refused to open it — Input Monitoring.
+    /// The device was found but macOS refused it — `kIOReturnNotPermitted`. Two very
+    /// different causes share this code: a missing Input Monitoring grant, and Secure
+    /// Keyboard Entry engaged by another app. This layer cannot tell them apart, so
+    /// the text names neither — attribution happens where the error is surfaced,
+    /// with `PermissionProbe` in hand (see `BoardController`).
     case accessDenied
     case noVendorInterface
 
@@ -293,7 +297,7 @@ public enum CodexError: Error, LocalizedError {
         case let .badSlot(slot): "slot \(slot) is outside 1…6"
         case .notConnected: "the Codex Micro is not connected"
         case let .timedOut(method): "timed out waiting for \(method)"
-        case .accessDenied: "macOS denied access to the pad (Input Monitoring)"
+        case .accessDenied: "macOS refused pad access (kIOReturnNotPermitted)"
         case .noVendorInterface: "no vendor HID interface found"
         }
     }
