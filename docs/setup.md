@@ -12,6 +12,9 @@ Or download the zip from [Releases](https://github.com/camwilso/openboard/releas
 unzip, and drag it to Applications. It is signed and notarized, so it opens normally —
 no right-click-Open, no trip to Security settings.
 
+OpenBoard is the only download. You do not need the ChatGPT app or Work Louder's Input
+app installed — the app talks to the pad directly.
+
 ## First launch
 
 Open OpenBoard and setup appears by itself. It has **no Dock icon** — it lives in the menu
