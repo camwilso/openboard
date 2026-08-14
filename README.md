@@ -125,6 +125,9 @@ whether those signals really are missing, that is worth more than a patch — se
 - A Work Louder Codex Micro, paired over Bluetooth or USB
 - Claude Code
 
+That is the whole list. Neither the ChatGPT app nor Work Louder's Input app needs to be
+installed — OpenBoard talks to the pad directly.
+
 No runtime dependencies. The only network request it makes is the daily update check,
 which you can turn off. Nothing about your sessions leaves the machine.
 
@@ -214,7 +217,8 @@ a reinstall.
 
 ## Coexisting with Codex
 
-The ChatGPT app repaints these LEDs on its own schedule. If you use both, either set
+The ChatGPT app is not required — without it, OpenBoard is the only thing driving the pad
+and none of this applies. The ChatGPT app repaints these LEDs on its own schedule. If you use both, either set
 Codex to **Custom assignments** and give it a subset of keys, or accept periodic repaint.
 The two never interleave writes mid-message.
 
