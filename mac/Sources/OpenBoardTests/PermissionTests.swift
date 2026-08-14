@@ -24,20 +24,24 @@ func runPermissionCoverageTests() {
     }
 
     test("iTerm2 automation is first-class, like Terminal, when iTerm2 is installed") {
-        // This machine has iTerm2 — see toj design notes — so the jump feature it
-        // drives is not optional, and neither is asking for it: an ungranted iTerm2
-        // must be woken and asked for up front, exactly like Terminal, not deferred to
-        // whenever the feature first runs.
+        // On a machine with iTerm2, the jump feature it drives is not optional, and
+        // neither is asking for it: an ungranted iTerm2 must be woken and asked for up
+        // front, exactly like Terminal, not deferred to whenever the feature first
+        // runs. Without iTerm2 the target must flip to optional — invisible rather
+        // than counted as missing — so the assertion follows the environment the
+        // suite actually runs on (CI runners have no iTerm2).
         guard let target = PermissionProbe.automationTargets.first(where: { $0.bundleID == "com.googlecode.iterm2" }) else {
             expect(false, "iTerm2 is not in automationTargets")
             return
         }
         expectEqual(target.name, "iTerm2")
-        expect(
-            NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.googlecode.iterm2") != nil,
-            "this test assumes iTerm2 is installed on the machine running it"
-        )
-        expect(!target.optional, "iTerm2 must not be optional once it is installed")
+        let installed = NSWorkspace.shared
+            .urlForApplication(withBundleIdentifier: "com.googlecode.iterm2") != nil
+        if installed {
+            expect(!target.optional, "iTerm2 must not be optional once it is installed")
+        } else {
+            expect(target.optional, "iTerm2 must stay optional while it is not installed")
+        }
     }
 
     test("QuickTime automation stays optional — it is the novelty, not iTerm2") {
