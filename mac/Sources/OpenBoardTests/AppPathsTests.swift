@@ -514,6 +514,17 @@ func runVoiceRingTests() {
         expectEqual(prefs.ambient.completionLap, false)
     }
 
+    test("the chord is opt-in and round-trips") {
+        // Off by default: ⌃Y only does anything once the user binds it to
+        // voice:pushToTalk in keybindings.json, and a key that silently does
+        // nothing is worse than a key that sometimes types a space.
+        expectEqual(Preferences.default.voiceChord, false)
+        expect(Preferences.merging(["voiceChord": true]).voiceChord)
+        var prefs = Preferences.default
+        prefs.voiceChord = true
+        expect(Preferences.merging(prefs.json).voiceChord)
+    }
+
     test("rainbow is a real effect the firmware knows") {
         // The ring is written as a lighting side, not a show, so it holds until the
         // belief ends rather than running for a fixed duration.

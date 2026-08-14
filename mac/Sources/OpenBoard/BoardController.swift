@@ -510,8 +510,15 @@ final class BoardController: ObservableObject {
             Log.write(result.ok ? "key \(key): opened a Terminal tab" : "key \(key): \(result.detail)")
 
         case .voiceTap:
-            let result = Actions.tapVoice()
-            Log.write(result.ok ? "key \(key): voice tap" : "key \(key): \(result.detail)")
+            // The chord invokes `voice:pushToTalk` directly and types nothing; space
+            // is the fallback that also types spaces when the input is not empty.
+            let chord = model.preferences.voiceChord
+            let result = chord ? Actions.tapVoiceChord() : Actions.tapVoice()
+            Log.write(
+                result.ok
+                    ? "key \(key): voice tap (\(chord ? "⌃Y" : "space"))"
+                    : "key \(key): \(result.detail)"
+            )
             // The same tap starts and stops it, so the belief flips with the key.
             if result.ok { setVoice(!voiceIsActive, why: "tapped") }
 
