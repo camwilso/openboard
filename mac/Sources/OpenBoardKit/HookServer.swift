@@ -100,6 +100,14 @@ public actor HookServer {
         /// handful of variables the rules depend on. Without these, eligibility
         /// cannot tell a human session from a subagent.
         public var environment: [String: String] { envValue }
+
+        /// `type == "subagent"` ids from `background_tasks`, or empty if the array is
+        /// absent/empty. Used to reconcile the delegation counter on every `Stop`.
+        public var backgroundSubagentIDs: [String] {
+            (raw["background_tasks"] as? [[String: Any]] ?? [])
+                .filter { ($0["type"] as? String) == "subagent" }
+                .compactMap { $0["id"] as? String }
+        }
     }
 
     public typealias Handler = @Sendable (Event) async -> Void

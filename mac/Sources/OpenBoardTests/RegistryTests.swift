@@ -241,6 +241,216 @@ func runRegistryTests() {
         // Notification needs a matcher, and carries its own map.
         expect(EventMapper.state(for: "Notification") == nil)
     }
+
+    test("adjustDelegation on SubagentStart inserts the agent id, and ignores an unknown session") {
+        var registry = SessionRegistry()
+        _ = registry.claim(sessionID: "a", pid: 1, isAlive: alwaysAlive)
+        _ = registry.adjustDelegation(sessionID: "a", event: "SubagentStart", agentID: "agent-1")
+        expectEqual(registry.entry(forSession: "a")?.delegatingAgentIDs, ["agent-1"])
+        _ = registry.adjustDelegation(sessionID: "a", event: "SubagentStart", agentID: "agent-2")
+        expectEqual(registry.entry(forSession: "a")?.delegatingAgentIDs, ["agent-1", "agent-2"])
+        // Inserting the same id twice must not double-count (a set, not a counter).
+        _ = registry.adjustDelegation(sessionID: "a", event: "SubagentStart", agentID: "agent-1")
+        expectEqual(registry.entry(forSession: "a")?.delegatingAgentIDs.count, 2)
+
+        // An unknown session_id never allocates a slot — mirrors setState's own rule.
+        let before = registry.entries.count
+        let result = registry.adjustDelegation(
+            sessionID: "ghost", event: "SubagentStart", agentID: "agent-1"
+        )
+        expect(result == nil, "an unknown session must not be given a key")
+        expectEqual(registry.entries.count, before)
+    }
+
+    test("adjustDelegation on SubagentStart with a missing agent_id is a no-op") {
+        // Documented degrade: an unmatchable insert could never be removed
+        // by its own SubagentStop, so it is skipped rather than fabricating an id —
+        // the next Stop's reconcile remains authoritative regardless.
+        var registry = SessionRegistry()
+        _ = registry.claim(sessionID: "a", pid: 1, isAlive: alwaysAlive)
+        _ = registry.adjustDelegation(sessionID: "a", event: "SubagentStart", agentID: nil)
+        expect(registry.entry(forSession: "a")?.delegatingAgentIDs.isEmpty == true)
+        _ = registry.adjustDelegation(sessionID: "a", event: "SubagentStart", agentID: "")
+        expect(registry.entry(forSession: "a")?.delegatingAgentIDs.isEmpty == true)
+    }
+
+    test("adjustDelegation on SubagentStop removes the agent id; removing an absent id is a no-op") {
+        var registry = SessionRegistry()
+        _ = registry.claim(sessionID: "a", pid: 1, isAlive: alwaysAlive)
+        _ = registry.adjustDelegation(sessionID: "a", event: "SubagentStart", agentID: "agent-1")
+        _ = registry.adjustDelegation(sessionID: "a", event: "SubagentStart", agentID: "agent-2")
+        _ = registry.adjustDelegation(sessionID: "a", event: "SubagentStop", agentID: "agent-1")
+        expectEqual(registry.entry(forSession: "a")?.delegatingAgentIDs, ["agent-2"])
+        _ = registry.adjustDelegation(sessionID: "a", event: "SubagentStop", agentID: "agent-2")
+        expect(registry.entry(forSession: "a")?.delegatingAgentIDs.isEmpty == true)
+        // Duplicate/unknown SubagentStop delivery must not error or resurrect anything.
+        _ = registry.adjustDelegation(sessionID: "a", event: "SubagentStop", agentID: "agent-2")
+        expect(registry.entry(forSession: "a")?.delegatingAgentIDs.isEmpty == true)
+
+        expect(
+            registry.adjustDelegation(sessionID: "ghost", event: "SubagentStop", agentID: "agent-1")
+                == nil,
+            "an unknown session must not be given a key"
+        )
+    }
+
+    test("the late-SubagentStop race: a SubagentStop for an already-reconciled-away agent is a no-op") {
+        // Hardware-observed sequence: A dispatched, A killed, B dispatched, a Stop
+        // reconciles the set to {B} (A is already gone from background_tasks), then
+        // A's late SubagentStop finally arrives. A bare counter would decrement past
+        // the truth; the set must stay exactly {B} and delegating must stay true.
+        var registry = SessionRegistry()
+        _ = registry.claim(sessionID: "a", pid: 1, isAlive: alwaysAlive)
+        _ = registry.adjustDelegation(sessionID: "a", event: "SubagentStart", agentID: "A")
+        _ = registry.adjustDelegation(sessionID: "a", event: "SubagentStart", agentID: "B")
+        // Stop reconciles to the live background_tasks set — A already dropped off it.
+        _ = registry.reconcileDelegation(sessionID: "a", ids: ["B"])
+        expectEqual(registry.entry(forSession: "a")?.delegatingAgentIDs, ["B"])
+
+        // A's late SubagentStop arrives after the reconcile already removed it.
+        _ = registry.adjustDelegation(sessionID: "a", event: "SubagentStop", agentID: "A")
+        expectEqual(
+            registry.entry(forSession: "a")?.delegatingAgentIDs, ["B"],
+            "a late SubagentStop for an id the reconcile already dropped must not touch B"
+        )
+        expect(
+            !(registry.entry(forSession: "a")?.delegatingAgentIDs.isEmpty ?? true),
+            "still delegating: B is still in flight"
+        )
+    }
+
+    test("reconcileDelegation is authoritative, overriding drifted incremental sets") {
+        // Simulates the spike's out-of-order-finish / non-head-removal case: whatever
+        // SubagentStart/SubagentStop produced is replaced wholesale by the live
+        // background_tasks ids on every Stop, never trusted as a running total.
+        var registry = SessionRegistry()
+        _ = registry.claim(sessionID: "a", pid: 1, isAlive: alwaysAlive)
+        _ = registry.adjustDelegation(sessionID: "a", event: "SubagentStart", agentID: "agent-1")
+        _ = registry.adjustDelegation(sessionID: "a", event: "SubagentStart", agentID: "agent-2")
+        _ = registry.adjustDelegation(sessionID: "a", event: "SubagentStart", agentID: "agent-3")
+        expectEqual(registry.entry(forSession: "a")?.delegatingAgentIDs.count, 3)
+
+        // The authoritative Stop-time set disagrees with the drifted increments.
+        _ = registry.reconcileDelegation(sessionID: "a", ids: ["agent-2"])
+        expectEqual(registry.entry(forSession: "a")?.delegatingAgentIDs, ["agent-2"])
+
+        // Reconcile to empty clears delegating entirely.
+        _ = registry.reconcileDelegation(sessionID: "a", ids: [])
+        expect(registry.entry(forSession: "a")?.delegatingAgentIDs.isEmpty == true)
+
+        expect(
+            registry.reconcileDelegation(sessionID: "ghost", ids: ["x"]) == nil,
+            "an unknown session must not be given a key"
+        )
+    }
+
+    test("the Stop override formula: done + delegating stays working, done + not delegating stays done") {
+        // Pure-function replica of BoardController.handle's counter-gated override
+        // (the `else` branch of its if/else if/else chain) — the live socket/hook
+        // path is not reachable from this suite, but the formula itself, including
+        // its load-bearing parens, is. `?? 0 > 0` would parse as `?? (0 > 0)` without
+        // them, which always evaluates true for an existing entry with an empty set.
+        var registry = SessionRegistry()
+        _ = registry.claim(sessionID: "a", pid: 1, isAlive: alwaysAlive)
+
+        func applied(_ state: SessionState, sessionID: String) -> SessionState {
+            (state == .done
+                && (registry.entry(forSession: sessionID)?.delegatingAgentIDs.count ?? 0) > 0)
+                ? .working : state
+        }
+
+        // No agents in flight: a plain turn's Stop -> done, unchanged
+        // (regression guard).
+        expectEqual(applied(.done, sessionID: "a"), .done)
+
+        // Reconciled to 1 in-flight subagent: Stop -> working, not done.
+        _ = registry.reconcileDelegation(sessionID: "a", ids: ["agent-1"])
+        expectEqual(applied(.done, sessionID: "a"), .working)
+
+        // A state other than .done is never touched by the override, delegating or not.
+        expectEqual(applied(.awaiting, sessionID: "a"), .awaiting)
+
+        // Reconciled back to empty: Stop -> done again.
+        _ = registry.reconcileDelegation(sessionID: "a", ids: [])
+        expectEqual(applied(.done, sessionID: "a"), .done)
+
+        // An unknown session_id must not crash or be treated as delegating.
+        expectEqual(applied(.done, sessionID: "ghost"), .done)
+
+        // The formula alone is not the whole story: BoardController feeds `applied`
+        // into `setState`, which is itself gated by `SessionState.mayReplace`. Prove
+        // `.working` is actually accepted over an entry sitting at `.done` — the exact
+        // path a recovering delegating session takes — rather than
+        // stopping one line short of the guard that could silently swallow it.
+        _ = registry.setState(sessionID: "a", to: .done)
+        expectEqual(registry.entry(forSession: "a")?.state, .done)
+        _ = registry.reconcileDelegation(sessionID: "a", ids: ["agent-1"])
+        let override = applied(.done, sessionID: "a")
+        _ = registry.setState(sessionID: "a", to: override)
+        expectEqual(
+            registry.entry(forSession: "a")?.state, .working,
+            "mayReplace must not swallow the delegating override"
+        )
+    }
+
+    test("suppressesDelegating: idle_prompt suppressed only while delegating") {
+        // idle_prompt fires on an idle timer, independent of subagent activity — it
+        // must not be allowed to clobber a delegating .working key, but a plain
+        // session (count == 0) is unaffected: the notification applies exactly as it
+        // always has.
+        expect(
+            EventMapper.suppressesDelegating(
+                eventName: "Notification", matcher: "idle_prompt", delegatedCount: 1
+            ),
+            "idle_prompt while delegating must be suppressed"
+        )
+        expect(
+            !EventMapper.suppressesDelegating(
+                eventName: "Notification", matcher: "idle_prompt", delegatedCount: 0
+            ),
+            "idle_prompt with no subagents in flight must apply normally"
+        )
+    }
+
+    test("suppressesDelegating: real attention subtypes are never suppressed") {
+        // permission_prompt/agent_needs_input/elicitation_dialog are genuine
+        // human-attention signals and must keep winning orange precedence over a
+        // delegating .working key — the suppression is keyed on the idle_prompt
+        // subtype specifically, never on any other Notification subtype.
+        for matcher in ["permission_prompt", "agent_needs_input", "elicitation_dialog"] {
+            expect(
+                !EventMapper.suppressesDelegating(
+                    eventName: "Notification", matcher: matcher, delegatedCount: 1
+                ),
+                "\(matcher) must never be suppressed, delegating or not"
+            )
+        }
+    }
+
+    test("suppressesDelegating: keyed on subtype, not event name or mapped state") {
+        // A non-Notification event, or a Notification with no matcher/a different
+        // subtype, must never be suppressed regardless of delegatedCount — the
+        // suppression follows the false signal (the subtype), not the color it
+        // happens to be remapped to.
+        expect(
+            !EventMapper.suppressesDelegating(
+                eventName: "Stop", matcher: "idle_prompt", delegatedCount: 1
+            ),
+            "only a Notification event can be suppressed"
+        )
+        expect(
+            !EventMapper.suppressesDelegating(
+                eventName: "Notification", matcher: nil, delegatedCount: 1
+            ),
+            "a Notification with no matcher must not be suppressed"
+        )
+        expect(
+            !EventMapper.suppressesDelegating(
+                eventName: "Notification", matcher: "agent_completed", delegatedCount: 1
+            ),
+            "an unrelated subtype must not be suppressed"
+        )
+    }
 }
 
 /**

@@ -183,6 +183,33 @@ func runHookTests() {
         }
     }
 
+    test("backgroundSubagentIDs filters background_tasks to type == subagent") {
+        // By design, the Stop-time reconcile is subagent-only scope — a
+        // shell/monitor/workflow/teammate/cloud-session/MCP-task background entry
+        // must not count toward delegatingAgentIDs.
+        let event = HookServer.Event(raw: [
+            "hook_event_name": "Stop",
+            "session_id": "s",
+            "background_tasks": [
+                ["id": "agent-1", "type": "subagent"],
+                ["id": "shell-1", "type": "shell"],
+                ["id": "agent-2", "type": "subagent"],
+                ["id": "monitor-1", "type": "monitor"],
+            ],
+        ])
+        expectEqual(Set(event.backgroundSubagentIDs), Set(["agent-1", "agent-2"]))
+    }
+
+    test("backgroundSubagentIDs is empty when background_tasks is absent or empty") {
+        let missing = HookServer.Event(raw: ["hook_event_name": "Stop", "session_id": "s"])
+        expect(missing.backgroundSubagentIDs.isEmpty)
+
+        let empty = HookServer.Event(raw: [
+            "hook_event_name": "Stop", "session_id": "s", "background_tasks": [],
+        ])
+        expect(empty.backgroundSubagentIDs.isEmpty)
+    }
+
     test("writing to a socket nobody is listening on fails quietly") {
         // The app not running is a normal state. The helper must return without a
         // sound: a hook runs inline with the session and cannot be allowed to
@@ -199,6 +226,27 @@ func runHookTests() {
             let permissions = (attributes?[.posixPermissions] as? NSNumber)?.intValue ?? 0
             expectEqual(permissions & 0o077, 0, "no group or other access")
         }
+    }
+
+    test("BoardController actually wires the delegating carve-out and Stop override") {
+        // `BoardController.swift` lives in the `OpenBoard` executable target, which
+        // `OpenBoardTests` does not import — same trade `FocusITerm2Tests.swift` makes
+        // for `Focus.swift`/`Actions.swift`. This reads the source text instead, so a
+        // revert of the wiring hunk (adjustDelegation/reconcileDelegation/
+        // suppressesDelegating/delegatingAgentIDs override) fails this test even though
+        // every registry-level unit test above is unaffected.
+        let boardController = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()      // OpenBoardTests
+            .deletingLastPathComponent()      // Sources
+            .appendingPathComponent("OpenBoard")
+            .appendingPathComponent("BoardController.swift")
+        let source = (try? String(contentsOf: boardController, encoding: .utf8)) ?? ""
+
+        expect(!source.isEmpty, "BoardController.swift did not read — the scan is checking nothing")
+        expect(source.contains("adjustDelegation("), "carve-out must call adjustDelegation")
+        expect(source.contains("reconcileDelegation("), "Stop branch must reconcile the counter")
+        expect(source.contains("suppressesDelegating("), "idle_prompt false-demotion guard must be wired")
+        expect(source.contains("delegatingAgentIDs"), "the Stop override must read delegatingAgentIDs")
     }
 }
 

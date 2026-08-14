@@ -46,6 +46,8 @@ public enum HookInstall {
         ("PostToolUse", nil),
         ("PostToolUseFailure", nil),
         ("PermissionRequest", nil),
+        ("SubagentStart", nil),
+        ("SubagentStop", nil),
     ]
 
     public enum EventStatus: Equatable, Sendable {

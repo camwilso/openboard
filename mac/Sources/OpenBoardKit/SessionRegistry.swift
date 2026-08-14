@@ -31,6 +31,19 @@ public struct SessionRegistry: Sendable, Equatable {
         /// Enter but ignores Escape — so "reject" is not universally possible and
         /// the caller needs to know rather than send a key into the void.
         public var pendingTool: String?
+        /// `agent_id`s of in-flight background subagents for this session. A *set*,
+        /// not a bare count: a bare `Int` cannot distinguish "SubagentStop for an
+        /// agent the last `Stop` reconcile already dropped" from "for one it still
+        /// carries," which let a late-arriving `SubagentStop` decrement past a
+        /// reconcile that had already removed that agent by other means — the
+        /// hardware-observed race this field replaced a counter to fix.
+        /// Removing an id that is not present is a documented no-op (`Set.remove`),
+        /// which is exactly what kills that race. Not persisted (`RegistryStore.
+        /// StoredEntry` omits it, same precedent as `pendingTool`) — on relaunch it
+        /// starts empty and self-heals on the next `Stop`'s reconcile
+        /// (`BoardController.handle`'s `Stop` branch). A resumed/forked CLI session
+        /// can also leave the live set briefly stale; same self-heal applies.
+        public var delegatingAgentIDs: Set<String> = []
         public var claimSeq: Int
         public var claimedAt: Date
         public var updatedAt: Date
@@ -252,6 +265,53 @@ public struct SessionRegistry: Sendable, Equatable {
     @discardableResult
     public mutating func markEnded(sessionID: String, now: Date = Date()) -> Entry? {
         setState(sessionID: sessionID, to: .ended, now: now)
+    }
+
+    /// Insert or remove `agentID` from `delegatingAgentIDs` for `SubagentStart`/
+    /// `SubagentStop`. Never allocates — mirrors `setState`'s own rule: an unknown
+    /// `sessionID` is ignored rather than given a key, so a subagent event can never
+    /// claim a slot. Removing an id not currently in the set (a duplicate
+    /// `SubagentStop`, or one for an agent a prior `Stop` reconcile already dropped)
+    /// is a no-op, not an error — this is the fix for the hardware-observed race
+    /// a bare counter could not express.
+    ///
+    /// **Missing `agent_id` degrade:** if `agentID` is `nil` or empty, the event is
+    /// ignored for set purposes — deliberately, not a placeholder id. An unmatchable
+    /// insert could never be removed by its own `SubagentStop` (there is no id to
+    /// match), so it would only ever be cleaned up by the next `Stop`'s authoritative
+    /// reconcile anyway; skipping the insert here changes nothing about correctness
+    /// and avoids fabricating an id that was never observed.
+    @discardableResult
+    public mutating func adjustDelegation(
+        sessionID: String, event: String, agentID: String?
+    ) -> Entry? {
+        guard let index = entries.firstIndex(where: { $0.sessionID == sessionID }) else {
+            return nil
+        }
+        guard let agentID, !agentID.isEmpty else { return entries[index] }
+        switch event {
+        case "SubagentStart":
+            entries[index].delegatingAgentIDs.insert(agentID)
+        case "SubagentStop":
+            entries[index].delegatingAgentIDs.remove(agentID)
+        default:
+            break
+        }
+        return entries[index]
+    }
+
+    /// Authoritative reconcile of `delegatingAgentIDs`, called on every `Stop`.
+    /// Replaces the set wholesale with `ids` — never trusted as a running total
+    /// across `Stop`s (proven necessary by out-of-order-finish and non-head array
+    /// removal, and by the late-`SubagentStop` race `adjustDelegation` alone cannot
+    /// resolve). Never allocates, same rule as `setState`/`adjustDelegation`.
+    @discardableResult
+    public mutating func reconcileDelegation(sessionID: String, ids: [String]) -> Entry? {
+        guard let index = entries.firstIndex(where: { $0.sessionID == sessionID }) else {
+            return nil
+        }
+        entries[index].delegatingAgentIDs = Set(ids)
+        return entries[index]
     }
 
     /// Drop entries whose process is gone. A dead session holding a key makes the
@@ -488,5 +548,35 @@ public enum EventMapper {
         default:
             return nil
         }
+    }
+
+    /**
+     Whether a mapped state must be dropped rather than applied, because it descends
+     from an `idle_prompt` Notification while the session is delegating.
+
+     `idle_prompt` fires on an idle *timer* (Claude Code's own ~60s "still there?"
+     check), not a real user-idle signal — the same reason `defaultNotifications`
+     deliberately omits it above. Left unmapped in a fresh config it is harmless, but a
+     user who remaps it to *any* state (commonly `.idle`) turns that timer into a false
+     demotion: it fires well inside a delegating session's `.working` window and, since
+     `mayReplace` only guards `done -> idle`, repaints a delegating key straight to
+     slate with no warning.
+
+     Keyed on the **subtype**, not the mapped state, because the remap is
+     user-controlled — suppressing only when the mapped state happens to equal `.idle`
+     would miss a user who remapped `idle_prompt` to some other color, and the false
+     signal is the subtype firing at all, not which color it happened to land on this
+     machine.
+
+     Scoped to `idle_prompt` alone: `permission_prompt`/`agent_needs_input`/
+     `elicitation_dialog` are real attention signals and must keep winning their orange
+     precedence over a delegating `.working`, delegating or not.
+     */
+    public static func suppressesDelegating(
+        eventName: String,
+        matcher: String?,
+        delegatedCount: Int
+    ) -> Bool {
+        eventName == "Notification" && matcher == "idle_prompt" && delegatedCount > 0
     }
 }

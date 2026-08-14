@@ -895,6 +895,46 @@ final class BoardController: ObservableObject {
     }
 
     private func handle(_ event: HookServer.Event) async {
+        /*
+         Delegating-state carve-out, ahead of `Eligibility.evaluate`.
+
+         `SubagentStart`/`SubagentStop` payloads carry `agent_id`/`agent_type` even
+         though they describe the *parent* session's own bookkeeping, not a subagent
+         process reporting in — `Eligibility.evaluate`'s first two checks would refuse
+         both unconditionally otherwise (Eligibility.swift:79-86). This branch is keyed
+         on the two literal event names only, never on "any event with an agent field",
+         so a subagent's own PreToolUse/PostToolUse (which also carries those fields)
+         still falls through to `Eligibility.evaluate` below and is refused exactly as
+         today. `adjustDelegation` never allocates — an unknown `session_id` is
+         ignored rather than given a key, so scarcity is preserved by construction.
+
+         This also bypasses the CLAUDE_AGENT_ID/
+         CLAUDE_AGENT_TYPE env checks Eligibility would otherwise apply, so a *nested*
+         subagent's own SubagentStart could in principle reach `adjustDelegation` and
+         over-count. Bounded by the authoritative reconcile on every `Stop` (below),
+         which replaces the incremental count with the true `background_tasks` size
+         regardless of how it got there.
+
+         No `publish()`/`paint()` here: `SubagentStart` precedes the turn's own `Stop`
+         by construction (spike-observed ordering), so there is no visible state change
+         to paint at dispatch time — the effect surfaces the next time `Stop` reconciles
+         and (possibly) overrides `.done` to `.working`, which already repaints.
+
+         `agentID` (from the same `agent_id` field Eligibility would have rejected on)
+         is what turns `delegatingAgentIDs` into a set rather than a bare counter — see
+         `SessionRegistry.Entry.delegatingAgentIDs`'s doc comment for the race this
+         closes. A missing/empty `agent_id` degrades to a no-op inside
+         `adjustDelegation` itself, not here.
+         */
+        if event.name == "SubagentStart" || event.name == "SubagentStop",
+           let sessionID = event.sessionID {
+            registry.adjustDelegation(
+                sessionID: sessionID, event: event.name,
+                agentID: event.eligibilityPayload.agentID
+            )
+            return
+        }
+
         // Fail-closed: an unrecognised surface gets no key. Applied here rather than
         // in the helper so the rules live in one place and can be reasoned about.
         let verdict = Eligibility.evaluate(
@@ -1110,7 +1150,69 @@ final class BoardController: ObservableObject {
             registry.setState(sessionID: sessionID, to: .working)
             Log.write("hook \(event.name): \(existing.state.rawValue) -> working")
         } else {
-            registry.setState(sessionID: sessionID, to: state, pendingTool: event.toolName)
+            /*
+             `idle_prompt` false-demotion guard, ahead of the delegating override below.
+
+             Claude Code fires a Notification with subtype `idle_prompt` on an idle
+             timer (~60s after a turn ends), independent of whether subagents are still
+             running. A config that maps `idle_prompt` to any state (commonly `.idle`)
+             would otherwise repaint a delegating `.working` key straight to slate —
+             `mayReplace` only guards `done -> idle`, not `working -> idle`. Skipped
+             entirely (no `setState`, no repaint) rather than re-applying `.working`,
+             matching this function's own "a branch that declines says so on its own
+             line, without touching the registry" precedent (`clearsAttention` above).
+             */
+            let delegatedBefore = registry.entry(forSession: sessionID)?.delegatingAgentIDs.count ?? 0
+            if EventMapper.suppressesDelegating(
+                eventName: event.name,
+                matcher: event.matcher,
+                delegatedCount: delegatedBefore
+            ) {
+                Log.write(
+                    "hook \(event.name) idle_prompt suppressed (delegating, "
+                        + "\(delegatedBefore) in flight) [\(sessionID.prefix(8))]"
+                )
+                return
+            }
+
+            /*
+             Delegating-state override: a `Stop` that would paint `.done` paints
+             `.working` instead while background subagents are still in flight.
+
+             `background_tasks` (filtered to `type == "subagent"` by
+             `backgroundSubagentIDs`) is authoritative and replaces the whole
+             `delegatingAgentIDs` set wholesale — never trusted as a running total
+             across `Stop`s. This is a no-op for every event that does not map to
+             `.done` — Claude Code's `Stop` is the case this override exists for, but
+             other harnesses' `.done`-mapped events (Pi's `turn_end`/`agent_settled`,
+             `SessionRegistry.swift`) and a `Notification` subtype remapped to `.done`
+             (`HarnessPane`'s picker) reach the same override too — so a plain turn with
+             no subagents writes exactly the same `.done` it always has.
+
+             No deferred-transition replay needed for the last agent landing: when the
+             final background subagent finishes, the CLI has been observed to inject a
+             synthetic `UserPromptSubmit` (its prompt begins with `<task-notification>`)
+             followed by a real `Stop` — not a documented contract, but consistent
+             across hardware validation. That follow-on `Stop` reconciles the count to
+             zero and paints `.done` through this exact path — nothing needs to be
+             stashed and replayed when the counter drops.
+             */
+            if state == .done {
+                registry.reconcileDelegation(
+                    sessionID: sessionID,
+                    ids: event.backgroundSubagentIDs
+                )
+            }
+            let delegatedCount = registry.entry(forSession: sessionID)?.delegatingAgentIDs.count ?? 0
+            let delegating = delegatedCount > 0
+            let applied = (state == .done && delegating) ? SessionState.working : state
+            if state == .done, delegating {
+                Log.write(
+                    "hook \(event.name) deferred to working (delegating, "
+                        + "\(delegatedCount) in flight) [\(sessionID.prefix(8))]"
+                )
+            }
+            registry.setState(sessionID: sessionID, to: applied, pendingTool: event.toolName)
         }
 
         publish()
