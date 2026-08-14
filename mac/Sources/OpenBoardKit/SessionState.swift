@@ -186,18 +186,22 @@ public struct Appearance: Equatable, Sendable, Codable {
 }
 
 extension SessionState {
-    /// The shipped defaults, byte-identical to `lib/config.cjs`.
+    /// The shipped defaults. Colors and brightness carried from `lib/config.cjs`;
+    /// the effects have since settled on shallow-breath across the board — one
+    /// visual language instead of three — with two exceptions that mean something:
+    /// `error` breathes deep so a failure is unmistakably not routine, and `ended`
+    /// stays dark because a session that is gone has nothing to say.
     ///
     /// `speed` is carried even though the settings window does not expose it: the
     /// device takes it, the Node version set it, and dropping it here would quietly
     /// change how every breathing key looks.
     public static let defaultAppearances: [SessionState: Appearance] = [
-        .idle: Appearance(color: RGB(0x2E4A6B), effect: .solid, brightness: 0.55, speed: 0),
+        .idle: Appearance(color: RGB(0x2E4A6B), effect: .shallowBreath, brightness: 0.55, speed: 0.25),
         .viewing: Appearance(color: RGB(0x2E4A6B), effect: .shallowBreath, brightness: 0.85, speed: 0.25),
-        .working: Appearance(color: RGB(0x0C47E9), effect: .breath, brightness: 0.75, speed: 0.45),
-        .awaiting: Appearance(color: RGB(0xFF6A00), effect: .breath, brightness: 0.95, speed: 0.75),
+        .working: Appearance(color: RGB(0x0C47E9), effect: .shallowBreath, brightness: 0.75, speed: 0.45),
+        .awaiting: Appearance(color: RGB(0xFF6A00), effect: .shallowBreath, brightness: 0.95, speed: 0.75),
         .stalled: Appearance(color: RGB(0xFF6A00), effect: .shallowBreath, brightness: 0.5, speed: 0.3),
-        .done: Appearance(color: RGB(0x09B821), effect: .solid, brightness: 0.7, speed: 0),
+        .done: Appearance(color: RGB(0x09B821), effect: .shallowBreath, brightness: 0.7, speed: 0.25),
         .error: Appearance(color: RGB(0xD41145), effect: .breath, brightness: 0.9, speed: 0.8),
         .ended: Appearance(color: RGB(0x000000), effect: .off, brightness: 0, speed: 0),
     ]
@@ -237,24 +241,30 @@ public enum Viewing {
      green key across the board.
 
      So focus adds **motion**, never a color. A finished-and-focused key is still green
-     — it has to be, because green is the thing you came back for — it just breathes,
+     — it has to be, because green is the thing you came back for — it just moves more,
      which is the same signal `viewing` already uses for "you are here".
 
-     Only applied to states that are not already animated. `awaiting` and `error`
-     breathe on their own and are the loudest things on the board; making them breathe
-     differently because you happen to be looking at one would be motion competing with
-     motion for no gain.
+     "More" depends on where the key starts, because the board's resting language is
+     now shallow-breath: a solid key starts breathing, a shallow-breathing key breathes
+     *deep*. `breath` itself and `rainbow` are the loudest things on the board — motion
+     competing with motion gains nothing — and `off` is dark on purpose, so all three
+     are left alone.
      */
     public static func focused(_ appearance: Appearance, isFocused: Bool) -> Appearance {
-        guard isFocused, appearance.effect == .solid, appearance.brightness > 0 else {
+        guard isFocused, appearance.brightness > 0 else { return appearance }
+        var pulsed = appearance
+        switch appearance.effect {
+        case .solid:
+            pulsed.effect = .shallowBreath
+            // Gently paced, so it reads as attention rather than as activity.
+            pulsed.speed = 0.25
+        case .shallowBreath:
+            pulsed.effect = .breath
+        default:
             return appearance
         }
-        var pulsed = appearance
-        pulsed.effect = .shallowBreath
-        // The same treatment `viewing` gets over `idle`: a little brighter, gently
-        // paced, so it reads as attention rather than as activity.
+        // The same treatment `viewing` gets over `idle`: a little brighter.
         pulsed.brightness = min(1, appearance.brightness + 0.15)
-        pulsed.speed = 0.25
         return pulsed
     }
 
