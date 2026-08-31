@@ -50,6 +50,7 @@ runHoldTests()
 runJoystickTests()
 runFocusITerm2Tests()
 runCmuxTests()
+runCmuxDiscoveryTests()
 
 // Configuration and where it lives.
 runPreferencesTests()
