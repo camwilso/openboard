@@ -27,6 +27,12 @@ surface added by a later version.
 The rows below the switches — subagents, embedded SDK clients, anything remote — have
 none. They are never given a key by design, so there is nothing to turn off.
 
+A "new tab" key is per-app too: **new Terminal tab** sends ⌘T to Terminal, and the two
+cmux actions ask cmux directly — **new cmux tab** for a tab in the workspace you are in,
+**new cmux workspace** for what cmux's own shortcut list calls a new tab. Bind whichever
+matches the terminal you actually work in; a key bound to the Terminal one opens a
+Terminal window behind cmux, which is the wrong app doing the right thing.
+
 Hooks install automatically. Setup edits `~/.claude/settings.json`, preserving every
 unrelated setting and any other tool's hooks on the same events, and backs the file up
 first.

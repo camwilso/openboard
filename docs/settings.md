@@ -21,13 +21,16 @@ The **name** you give the pad is used everywhere OpenBoard refers to it — the 
 header, the Device pane, the disconnected message. Worth setting if you have more than one
 Mac.
 
-Every key other than the six Agent keys is yours to bind. The defaults:
+Every key other than the six Agent keys is yours to bind. The defaults, and what else
+is on offer:
 
 | | |
 |---|---|
 | approve / reject | answer the permission prompt in the session you are looking at |
 | type snippet | send a saved piece of text |
 | new Terminal tab | what it says |
+| new cmux tab | a tab in the cmux workspace you are in — cmux's ⌘T |
+| new cmux workspace | a whole new cmux workspace — cmux's ⌘N, which cmux itself calls "new tab" |
 | tap to dictate | push-to-talk |
 | fun mode | the party trick, see below |
 | the dial | press for the popover, hold for Settings |

@@ -51,6 +51,7 @@ runJoystickTests()
 runFocusITerm2Tests()
 runCmuxTests()
 runCmuxDiscoveryTests()
+runCmuxNewTabTests()
 runSurfaceListeningTests()
 
 // Configuration and where it lives.

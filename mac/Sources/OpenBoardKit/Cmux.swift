@@ -243,13 +243,42 @@ public enum Cmux {
      id, so it reads as "you are looking at none of these", which is exactly right.
      */
     public static func parseFocusedSurfaceID(_ json: String) -> String? {
+        parseFocused(json)?.surface
+    }
+
+    /// Where you are in cmux: the surface in front of you, and the workspace and window
+    /// holding it. Every field optional — a request that names what it knows and omits
+    /// what it does not is better than one that invents a handle.
+    public struct Focused: Equatable, Sendable {
+        public let surface: String?
+        public let workspace: String?
+        public let window: String?
+
+        public init(surface: String?, workspace: String?, window: String?) {
+            self.surface = surface
+            self.workspace = workspace
+            self.window = window
+        }
+    }
+
+    public static func parseFocused(_ json: String) -> Focused? {
         guard let data = json.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let focused = object["focused"] as? [String: Any],
-              let id = focused["surface_id"] as? String,
-              !id.isEmpty
+              let focused = object["focused"] as? [String: Any]
         else { return nil }
-        return id
+        func value(_ key: String) -> String? {
+            guard let text = focused[key] as? String, !text.isEmpty else { return nil }
+            return text
+        }
+        let result = Focused(
+            surface: value("surface_id"),
+            workspace: value("workspace_id"),
+            window: value("window_id")
+        )
+        // All three absent is not "focused on nothing", it is a shape that did not
+        // parse. Reported as nil so a caller cannot mistake it for an answer.
+        guard result != Focused(surface: nil, workspace: nil, window: nil) else { return nil }
+        return result
     }
 
     /// Split `surface:12 5DBF67AD-…` into its ref and its UUID. With
@@ -272,7 +301,49 @@ public enum Cmux {
 
     /// The focused surface's id, or nil if cmux could not be asked.
     public static func focusedSurfaceID(cli: String) -> String? {
-        parseFocusedSurfaceID(output(cli, ["identify", "--id-format", "uuids"]))
+        focused(cli: cli)?.surface
+    }
+
+    /// Where you are in cmux, or nil if cmux could not be asked.
+    public static func focused(cli: String) -> Focused? {
+        parseFocused(output(cli, ["identify", "--id-format", "uuids"]))
+    }
+
+    /**
+     A new terminal tab — a *surface* — in the workspace you are in.
+
+     cmux's own ⌘T. The workspace is named because a request that does not name one is
+     resolved against the **first** workspace, so omitting it would open the tab
+     somewhere you are not looking: the same trap `focus` documents at length.
+     */
+    public static func newTabArguments(in focused: Focused?) -> [String] {
+        var arguments = ["new-surface", "--type", "terminal", "--focus", "true"]
+        if let workspace = focused?.workspace { arguments += ["--workspace", workspace] }
+        if let window = focused?.window { arguments += ["--window", window] }
+        return arguments
+    }
+
+    /**
+     A new workspace — what cmux's own shortcut list calls `newTab` (⌘N).
+
+     No workspace to name, by definition. The *window* is named so a second cmux window
+     does not send the new workspace to the first one.
+     */
+    public static func newWorkspaceArguments(in focused: Focused?) -> [String] {
+        var arguments = ["new-workspace", "--focus", "true"]
+        if let window = focused?.window { arguments += ["--window", window] }
+        return arguments
+    }
+
+    /**
+     Run one command and hand back what cmux said.
+
+     Separate from `focus`, which only needs a yes or no. These are actions a key press
+     reports on, and cmux's own words — `OK workspace:13`, or `Error: not_found: …` —
+     are better than anything this app could invent about them.
+     */
+    public static func perform(_ arguments: [String], cli: String) -> String {
+        output(cli, arguments)
     }
 
     /**

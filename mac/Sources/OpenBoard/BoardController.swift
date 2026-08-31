@@ -570,6 +570,22 @@ final class BoardController: ObservableObject {
             let result = Actions.newTerminalTab()
             Log.write(result.ok ? "key \(key): opened a Terminal tab" : "key \(key): \(result.detail)")
 
+        case .newtabCmux:
+            let result = Actions.newCmuxTab()
+            Log.write(
+                result.ok
+                    ? "key \(key): opened a cmux tab — \(result.detail)"
+                    : "key \(key): \(result.detail)"
+            )
+
+        case .newWorkspaceCmux:
+            let result = Actions.newCmuxWorkspace()
+            Log.write(
+                result.ok
+                    ? "key \(key): opened a cmux workspace — \(result.detail)"
+                    : "key \(key): \(result.detail)"
+            )
+
         case .voiceTap:
             // The chord invokes `voice:pushToTalk` directly and types nothing; space
             // is the fallback that also types spaces when the input is not empty.

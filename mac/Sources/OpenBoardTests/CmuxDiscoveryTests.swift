@@ -79,3 +79,156 @@ func runCmuxDiscoveryTests() {
         expectEqual(found.map(\.pid).sorted(), [69397, 87144])
     }
 }
+
+/**
+ The two new-tab keys.
+
+ A "new tab" key bound to `newtab` sends ⌘T to Terminal.app, so pressing it while
+ working in cmux opens a Terminal window behind cmux — the wrong app doing the right
+ thing. cmux has two things the key could mean and names both itself: ⌘T is a new
+ *surface* (a tab in the pane you are in) and ⌘N is a new *workspace*, which cmux's own
+ shortcut list calls `newTab`. Both are offered rather than guessed between.
+ */
+func runCmuxNewTabTests() {
+    let here = Cmux.Focused(surface: "SURF", workspace: "WS", window: "WIN")
+
+    test("a new tab names the workspace you are in") {
+        // Without it the request resolves against the *first* workspace, so the key
+        // would open its tab somewhere the user is not looking — the same trap the
+        // focus path had.
+        expectEqual(
+            Cmux.newTabArguments(in: here),
+            ["new-surface", "--type", "terminal", "--focus", "true",
+             "--workspace", "WS", "--window", "WIN"]
+        )
+    }
+
+    test("a new workspace names the window but has no workspace to name") {
+        expectEqual(
+            Cmux.newWorkspaceArguments(in: here),
+            ["new-workspace", "--focus", "true", "--window", "WIN"]
+        )
+    }
+
+    test("both ask for focus — a new tab you have to go and find is not the point") {
+        expect(Cmux.newTabArguments(in: here).contains("--focus"))
+        expect(Cmux.newWorkspaceArguments(in: here).contains("--focus"))
+    }
+
+    test("what cmux could not tell us is omitted, not invented") {
+        // cmux unreachable, or an `identify` that did not parse. Bare commands still do
+        // the right thing whenever the caller is in the first workspace, which beats
+        // sending a handle that was made up.
+        expectEqual(
+            Cmux.newTabArguments(in: nil),
+            ["new-surface", "--type", "terminal", "--focus", "true"]
+        )
+        expectEqual(Cmux.newWorkspaceArguments(in: nil), ["new-workspace", "--focus", "true"])
+
+        let partial = Cmux.Focused(surface: nil, workspace: "WS", window: nil)
+        expectEqual(
+            Cmux.newTabArguments(in: partial),
+            ["new-surface", "--type", "terminal", "--focus", "true", "--workspace", "WS"]
+        )
+    }
+
+    // MARK: - reading where we are
+
+    let identify = """
+    {
+      "caller" : null,
+      "focused" : {
+        "pane_id" : "1D625A49-ACF4-40DD-B06B-CAC166C93015",
+        "surface_id" : "5DBF67AD-5331-43A9-A6BA-177C203D9B79",
+        "surface_type" : "terminal",
+        "window_id" : "237BD31D-4B4C-43E8-8C69-93B01D55A5E4",
+        "workspace_id" : "A5521A79-947D-4986-B4DC-DA379F172DCC"
+      }
+    }
+    """
+
+    test("identify gives the whole context, not just the surface") {
+        let focused = Cmux.parseFocused(identify)
+        expectEqual(focused?.surface, "5DBF67AD-5331-43A9-A6BA-177C203D9B79")
+        expectEqual(focused?.workspace, "A5521A79-947D-4986-B4DC-DA379F172DCC")
+        expectEqual(focused?.window, "237BD31D-4B4C-43E8-8C69-93B01D55A5E4")
+        // And the older, narrower reader still answers the same thing.
+        expectEqual(Cmux.parseFocusedSurfaceID(identify), focused?.surface)
+    }
+
+    test("a shape that did not parse is nil, not an empty answer") {
+        expectEqual(Cmux.parseFocused(""), nil)
+        expectEqual(Cmux.parseFocused("not json"), nil)
+        expectEqual(Cmux.parseFocused("{\"caller\":null}"), nil)
+        // Present but empty strings are the same as absent — a handle of "" would be
+        // passed to cmux as a flag value and refused.
+        expectEqual(Cmux.parseFocused("{\"focused\":{\"surface_id\":\"\",\"window_id\":\"\"}}"), nil)
+    }
+
+    test("a partial identify keeps what it has") {
+        let focused = Cmux.parseFocused("{\"focused\":{\"workspace_id\":\"WS\"}}")
+        expectEqual(focused?.workspace, "WS")
+        expectEqual(focused?.surface, nil)
+    }
+
+    // MARK: - the actions
+
+    test("both actions exist, are bindable, and say which app they mean") {
+        expect(KeyAction.allCases.contains(.newtabCmux))
+        expect(KeyAction.allCases.contains(.newWorkspaceCmux))
+        expectEqual(KeyAction.newtabCmux.rawValue, "newtab-cmux")
+        expectEqual(KeyAction.newWorkspaceCmux.rawValue, "newworkspace-cmux")
+        // The labels have to name the app, or three "new tab" entries in one picker are
+        // indistinguishable.
+        expectEqual(KeyAction.newtabCmux.short, "new cmux tab")
+        expectEqual(KeyAction.newWorkspaceCmux.short, "new cmux workspace")
+        expectEqual(KeyAction.newtab.short, "new Terminal tab")
+    }
+
+    test("a binding survives the config round trip") {
+        // `ACT09` is the key this arrived from: bound to `newtab`, opening Terminal.
+        let stored = Preferences.merging(["actionKeys": ["ACT09": "newtab-cmux"]])
+        expectEqual(stored.keyActions["ACT09"], .newtabCmux)
+        let reloaded = Preferences.merging(stored.json)
+        expectEqual(reloaded.keyActions["ACT09"], .newtabCmux)
+    }
+
+    test("the controller runs them, and reports what cmux said") {
+        let controller = (try? String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("OpenBoard/BoardController.swift"),
+            encoding: .utf8
+        )) ?? ""
+        expect(!controller.isEmpty, "BoardController.swift did not read")
+        expect(controller.contains("case .newtabCmux:"))
+        expect(controller.contains("Actions.newCmuxTab()"))
+        expect(controller.contains("case .newWorkspaceCmux:"))
+        expect(controller.contains("Actions.newCmuxWorkspace()"))
+    }
+
+    test("neither action goes through AppleScript") {
+        // The Terminal version sends ⌘T to whatever is frontmost. Doing that for cmux
+        // would only work when cmux already happened to be in front, and would type ⌘T
+        // into something else otherwise.
+        let actions = (try? String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("OpenBoard/Actions.swift"),
+            encoding: .utf8
+        )) ?? ""
+        expect(!actions.isEmpty, "Actions.swift did not read")
+        guard let start = actions.range(of: "private static func cmux(") else {
+            expect(false, "the shared cmux runner is gone")
+            return
+        }
+        let body = String(actions[start.lowerBound...].prefix(900))
+        expect(!body.contains("tell application"), "the cmux path must not emit AppleScript")
+        expect(
+            body.contains("cmux is not running"),
+            "a refusal must say which precondition failed"
+        )
+    }
+}
