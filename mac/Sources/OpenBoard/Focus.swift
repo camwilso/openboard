@@ -236,7 +236,7 @@ enum Focus {
             return .failed("cmux is running but its CLI is not in the bundle")
         }
         guard let surface = cmuxSurface(for: slot, cli: cli) else { return .noWindow }
-        guard Cmux.focus(surfaceID: surface, cli: cli) else { return .notFound }
+        guard Cmux.focus(surface, cli: cli) else { return .notFound }
         // Raised last, so the window that comes forward is already showing the right
         // surface rather than switching workspaces in front of you.
         app.activate()
@@ -261,10 +261,10 @@ enum Focus {
      the press: a jump that does nothing for the first few seconds of a session's life
      is exactly the kind of intermittent nothing this app is built to avoid.
      */
-    static func cmuxSurface(for slot: SlotView, cli: String) -> String? {
+    static func cmuxSurface(for slot: SlotView, cli: String) -> Cmux.Surface? {
         if let cached = slot.cmuxSurface { return cached }
         guard let pid = slot.pid else { return nil }
-        return Cmux.surfaces(cli: cli)[pid]?.id
+        return Cmux.surfaces(cli: cli)[pid]
     }
 
     /// Whether an app with this bundle ID is already running, without launching it.

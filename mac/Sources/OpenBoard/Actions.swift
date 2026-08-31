@@ -311,7 +311,7 @@ enum Actions {
             guard Focus.isRunning(bundleID: Cmux.bundleID), let cli = Focus.cmuxCLI,
                   let surface = Focus.cmuxSurface(for: target, cli: cli)
             else { return false }
-            return Cmux.focusedSurfaceID(cli: cli) == surface
+            return Cmux.focusedSurfaceID(cli: cli) == surface.id
         }
 
         if target.origin == .vscode {

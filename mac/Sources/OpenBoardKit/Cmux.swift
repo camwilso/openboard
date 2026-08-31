@@ -52,11 +52,34 @@ public enum Cmux {
         /// right now, exactly as it does in Terminal — so it feeds the same
         /// `TerminalTitle.clean` the Terminal path uses, spinner glyph and all.
         public let title: String?
+        /**
+         The workspace holding it, and the window holding that.
 
-        public init(id: String, ref: String, title: String?) {
+         Not decoration: **a focus request is resolved inside one workspace**, and a CLI
+         call from outside cmux has no caller context to supply it, so it falls back to
+         the *first* workspace — measured: not even the selected one — and answers
+         `not_found: Surface not found` for every surface anywhere else. Which meant
+         exactly one session on the board could be jumped to, always the same one, and
+         every other cmux key reported `notFound`.
+
+         Optional because a surface cmux lists without a resolvable pane is still worth
+         naming a row after; it just cannot be focused with certainty.
+         */
+        public let workspace: String?
+        public let window: String?
+
+        public init(
+            id: String,
+            ref: String,
+            title: String?,
+            workspace: String? = nil,
+            window: String? = nil
+        ) {
             self.id = id
             self.ref = ref
             self.title = title
+            self.workspace = workspace
+            self.window = window
         }
     }
 
@@ -126,9 +149,15 @@ public enum Cmux {
      that is not an integer and not a `surface:` ref simply ends the walk.
      */
     public static func parseTop(_ tsv: String) -> [Int: Surface] {
-        var surfaces: [String: Surface] = [:]   // ref -> surface
-        var parentOfPID: [Int: String] = [:]    // pid -> parent token (surface ref or pid)
+        var windowIDs: [String: String] = [:]                          // window ref -> uuid
+        var workspaces: [String: (id: String, window: String)] = [:]    // ws ref -> uuid, window ref
+        var paneParents: [String: String] = [:]                         // pane ref -> parent ref
+        var panels: [(ref: String, id: String, pane: String, title: String?)] = []
+        var parentOfPID: [Int: String] = [:]        // pid -> parent token (surface ref or pid)
 
+        // Collected first and resolved after, rather than resolved as it reads: a
+        // surface's workspace is on a *different* row, and depending on cmux printing
+        // parents before children would make this quietly wrong the day it does not.
         for line in tsv.split(separator: "\n") {
             // cpu, memory, count, kind, ref, parent, label
             let fields = line.components(separatedBy: "\t")
@@ -136,14 +165,18 @@ public enum Cmux {
             let kind = fields[3]
             let (ref, id) = handle(fields[4])
             let (parentRef, _) = handle(fields[5])
+            let label = fields.count > 6 ? fields[6] : ""
 
             switch kind {
+            case "window":
+                if let id { windowIDs[ref] = id }
+            case "workspace":
+                if let id { workspaces[ref] = (id, parentRef) }
+            case "pane":
+                paneParents[ref] = parentRef
             case "surface":
                 guard let id else { continue }
-                let label = fields.count > 6 ? fields[6] : ""
-                surfaces[ref] = Surface(
-                    id: id, ref: ref, title: label.isEmpty ? nil : label
-                )
+                panels.append((ref, id, parentRef, label.isEmpty ? nil : label))
             case "process":
                 guard let pid = Int(ref) else { continue }
                 /*
@@ -159,6 +192,26 @@ public enum Cmux {
             default:
                 continue
             }
+        }
+
+        var surfaces: [String: Surface] = [:]   // ref -> surface
+        for panel in panels {
+            // Splits nest, so a pane's parent can be another pane. Walked rather than
+            // read one level up, for the same reason the process walk is.
+            var current = panel.pane
+            var workspace: (id: String, window: String)?
+            for _ in 0..<8 {
+                if let found = workspaces[current] { workspace = found; break }
+                guard let parent = paneParents[current] else { break }
+                current = parent
+            }
+            surfaces[panel.ref] = Surface(
+                id: panel.id,
+                ref: panel.ref,
+                title: panel.title,
+                workspace: workspace?.id,
+                window: workspace.flatMap { windowIDs[$0.window] }
+            )
         }
 
         var result: [Int: Surface] = [:]
@@ -223,18 +276,42 @@ public enum Cmux {
     }
 
     /**
-     Select a surface and the workspace holding it.
+     Select a surface, the workspace holding it, and the window holding that.
 
-     `focus-panel` is cmux's own alias for a surface focus, and it does the whole walk:
-     the surface's workspace is selected and the surface focused within it, in one call.
-     It answers `OK surface:12 workspace:1`.
+     `focus-panel` is cmux's own alias for a surface focus: the workspace is selected and
+     the surface focused within it, in one call, answering `OK surface:12 workspace:1`.
+     It switches tabs within a pane as readily as it switches workspaces.
+
+     **The workspace has to be named.** A focus request is resolved *inside* one
+     workspace, and the CLI run from outside cmux has no caller context to supply one, so
+     it falls back to the first workspace and returns `not_found: Surface not found` for
+     anything else. Omitting it made exactly one session on the board reachable — always
+     the same one — while every other cmux key answered `notFound`. The window is passed
+     for the same reason, one level out.
+
+     A surface whose workspace could not be resolved is still attempted bare: it works
+     when the session happens to be in the current workspace, which beats refusing.
 
      Focusing *inside* cmux is all this does — bringing cmux itself forward is the
      caller's job, and is one `NSRunningApplication.activate()` rather than anything
      asked of cmux, so a jump into cmux needs no Automation grant at any point.
      */
-    public static func focus(surfaceID: String, cli: String) -> Bool {
-        output(cli, ["focus-panel", "--panel", surfaceID]).hasPrefix("OK")
+    public static func focus(_ surface: Surface, cli: String) -> Bool {
+        output(cli, focusArguments(surface)).hasPrefix("OK")
+    }
+
+    /// Split out from `focus` so the flags can be tested. Whether `--workspace` is
+    /// actually there is the difference between one reachable session and all of them,
+    /// and a subprocess is the one thing the suite cannot run.
+    public static func focusArguments(_ surface: Surface) -> [String] {
+        var arguments = ["focus-panel", "--panel", surface.id]
+        if let workspace = surface.workspace {
+            arguments += ["--workspace", workspace]
+        }
+        if let window = surface.window {
+            arguments += ["--window", window]
+        }
+        return arguments
     }
 
     /**

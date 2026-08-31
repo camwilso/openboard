@@ -154,9 +154,10 @@ struct SlotView: Identifiable, Equatable {
     /// which surface a pid is running in, so this is what resolves a jump when the
     /// cached `cmuxSurface` is not there yet.
     var pid: Int?
-    /// The cmux surface holding this session — a UUID, stable for the surface's life.
-    /// Nil for every other host, and for a cmux session claimed since the last read.
-    var cmuxSurface: String?
+    /// The cmux surface holding this session, with the workspace and window a focus
+    /// request has to name. Nil for every other host, and for a cmux session claimed
+    /// since the last read.
+    var cmuxSurface: Cmux.Surface?
     /// The raw entry point, kept alongside `origin` because the two answer different
     /// questions. `origin` is `.vscode` for both an extension-hosted chat and a session
     /// in VS Code's integrated terminal; only the first has a panel that can be revealed

@@ -1830,7 +1830,7 @@ final class BoardController: ObservableObject {
                     entrypoint: entry.entrypoint, tty: entry.tty, host: entry.host
                 ),
                 pid: entry.pid,
-                cmuxSurface: entry.pid.flatMap { cmuxSurfaces[$0]?.id },
+                cmuxSurface: entry.pid.flatMap { cmuxSurfaces[$0] },
                 entrypoint: entry.entrypoint,
                 isNamed: name != nil,
                 cwd: entry.cwd,

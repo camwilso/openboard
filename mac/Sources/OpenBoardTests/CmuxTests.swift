@@ -48,6 +48,58 @@ func runCmuxTests() {
         expectEqual(surfaces[87144]?.ref, "surface:12")
     }
 
+    test("a surface carries the workspace and window a focus request has to name") {
+        // Without these, `focus-panel` resolves the surface inside the first workspace
+        // only and answers `not_found` for every other one — so exactly one session on
+        // the board could be jumped to, always the same one, and the rest reported
+        // notFound.
+        expectEqual(surfaces[87144]?.workspace, "A5521A79-947D-4986-B4DC-DA379F172DCC")
+        expectEqual(surfaces[87144]?.window, "237BD31D-4B4C-43E8-8C69-93B01D55A5E4")
+    }
+
+    test("the workspace is resolved through nested panes, not one level up") {
+        // A split's pane hangs off another pane. `surface:20` is two panes deep.
+        let nested = Cmux.parseTop([
+            "0\t0\t1\twindow\twindow:1 WIN-1\ttotal\t",
+            "0\t0\t1\tworkspace\tworkspace:4 WS-4\twindow:1 WIN-1\tProjects",
+            "0\t0\t1\tpane\tpane:9 PANE-9\tworkspace:4 WS-4\t",
+            "0\t0\t1\tpane\tpane:11 PANE-11\tpane:9 PANE-9\t",
+            "0\t0\t1\tsurface\tsurface:20 SURF-20\tpane:11 PANE-11\ta split",
+            "0\t0\t1\tprocess\t700\tsurface:20 SURF-20\tclaude",
+        ].joined(separator: "\n"))
+        expectEqual(nested[700]?.workspace, "WS-4")
+        expectEqual(nested[700]?.window, "WIN-1")
+    }
+
+    test("a surface whose workspace cannot be resolved still names its row") {
+        // pane:6 has no row in the fixture. The surface is still listed — a row with a
+        // name and no certain jump beats no row.
+        let orphan = Cmux.parseTop([
+            "0\t0\t1\tsurface\tsurface:7 SURF-7\tpane:6 PANE-6\tan orphan",
+            "0\t0\t1\tprocess\t800\tsurface:7 SURF-7\tclaude",
+        ].joined(separator: "\n"))
+        expectEqual(orphan[800]?.title, "an orphan")
+        expectEqual(orphan[800]?.workspace, nil)
+        expectEqual(orphan[800]?.window, nil)
+    }
+
+    test("focus names the workspace and window, so any session is reachable") {
+        let surface = Cmux.Surface(
+            id: "SURF", ref: "surface:3", title: nil, workspace: "WS", window: "WIN"
+        )
+        expectEqual(
+            Cmux.focusArguments(surface),
+            ["focus-panel", "--panel", "SURF", "--workspace", "WS", "--window", "WIN"]
+        )
+    }
+
+    test("a surface with no known workspace is still attempted bare") {
+        // It works whenever the session is in the current workspace, which beats
+        // refusing to try.
+        let surface = Cmux.Surface(id: "SURF", ref: "surface:3", title: nil)
+        expectEqual(Cmux.focusArguments(surface), ["focus-panel", "--panel", "SURF"])
+    }
+
     test("the surface row wins over the tag row that printed first") {
         // The tag parent resolves to nothing. If the first parent seen were kept
         // unconditionally, this session would have no surface and no jump — and which
@@ -265,8 +317,8 @@ func runCmuxTests() {
 
     test("focusCmux never launches cmux, and raises it only after selecting") {
         expect(focus.contains("runningApplications(withBundleIdentifier: Cmux.bundleID)"))
-        expect(focus.contains("Cmux.focus(surfaceID: surface, cli: cli)"))
-        guard let selected = focus.range(of: "Cmux.focus(surfaceID: surface, cli: cli)"),
+        expect(focus.contains("Cmux.focus(surface, cli: cli)"))
+        guard let selected = focus.range(of: "Cmux.focus(surface, cli: cli)"),
               let activated = focus.range(of: "app.activate()")
         else {
             expect(false, "focusCmux no longer selects then activates")
@@ -291,7 +343,7 @@ func runCmuxTests() {
 
     test("hasLanded confirms a cmux session by surface id") {
         expect(actions.contains("if target.origin == .cmux {"))
-        expect(actions.contains("Cmux.focusedSurfaceID(cli: cli) == surface"))
+        expect(actions.contains("Cmux.focusedSurfaceID(cli: cli) == surface.id"))
     }
 
     test("the surface is resolved once, not once per poll") {
@@ -340,7 +392,7 @@ func runCmuxTests() {
     test("the controller matches the focused surface by pid, and publishes it") {
         expect(controller.contains("case let .cmux(surface):"))
         expect(controller.contains("entry.pid.flatMap { cmuxSurfaces[$0]?.id } == surface"))
-        expect(controller.contains("cmuxSurface: entry.pid.flatMap { cmuxSurfaces[$0]?.id }"))
+        expect(controller.contains("cmuxSurface: entry.pid.flatMap { cmuxSurfaces[$0] }"))
     }
 
     test("a cmux tab title names the session, through the shared cleaner") {
