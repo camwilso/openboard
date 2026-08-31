@@ -49,6 +49,7 @@ runEncoderClickTests()
 runHoldTests()
 runJoystickTests()
 runFocusITerm2Tests()
+runCmuxTests()
 
 // Configuration and where it lives.
 runPreferencesTests()

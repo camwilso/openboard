@@ -22,6 +22,9 @@ public enum ProcessAncestry {
     public enum Host: String, Sendable, Equatable {
         case terminal
         case vscode
+        /// A cmux surface — a tab or split in the cmux terminal. Reached through cmux's
+        /// own socket rather than by tty; see `Cmux`.
+        case cmux
         case unknown
     }
 
@@ -33,6 +36,11 @@ public enum ProcessAncestry {
         ("Code Helper", .vscode),
         ("/Applications/Utilities/Terminal.app", .terminal),
         ("Terminal.app", .terminal),
+        // The bundle, not the executable name. `cmux` is also the name of the CLI the
+        // app puts on every cmux terminal's PATH, and an ancestor called `cmux` from
+        // somewhere else entirely is not evidence of anything; a path *through the
+        // bundle* is, whichever binary inside it is running.
+        ("cmux.app", .cmux),
     ]
 
     /// Walk up from a process until one of the known hosts is recognised.

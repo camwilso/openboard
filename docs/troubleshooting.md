@@ -58,6 +58,27 @@ you granted it, quit and reopen iTerm2 once — the grant does not always take e
 target app that is already open. The iTerm2 row only appears in Settings if iTerm2 is
 installed.
 
+## Jumping to a chat in cmux does nothing
+
+cmux needs no permission, so a refusal is not the cause. Check the app log
+(`~/Library/Logs/OpenBoard/app.log`) for the `cmux:` line — it names the slot, the surface
+and the session's title:
+
+```
+cmux: 3:87144→surface:12 “Refactor the parser”
+```
+
+- **No `cmux:` line at all** — cmux is not running, or its CLI is not where OpenBoard
+  looks: inside the running app's bundle at `Contents/Resources/bin/cmux`.
+- **`reachable, no session on the board is in it`** — cmux answered, and none of the
+  sessions holding a key is in one of its surfaces. A session started over `ssh` from a
+  cmux tab runs on the other machine and is not reachable this way.
+- **A line naming the wrong surface** — the session moved to another tab and the board has
+  not re-read it yet; it corrects itself within a few seconds.
+
+If cmux is configured with a socket password, OpenBoard cannot talk to it and the rows stay
+unreachable. Nothing else on the board is affected.
+
 ## Colours land on the wrong keys
 
 The key order has not been confirmed, and your pad reports a different order from the one

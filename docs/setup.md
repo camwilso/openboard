@@ -61,6 +61,10 @@ asks the first time a press actually needs it. If iTerm2 was already running whe
 granted it, quit and reopen iTerm2 once — the grant does not always take effect for a
 target app that is already open.
 
+**cmux is not listed, and needs nothing.** Jumping to a cmux session goes through cmux's
+own socket rather than an Apple event, so there is no Automation row to grant and nothing
+to re-grant after cmux restarts.
+
 ### Key order
 
 Confirms which physical key is slot 1. The board assumes the order every pad so far

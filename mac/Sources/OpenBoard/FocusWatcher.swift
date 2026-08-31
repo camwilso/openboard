@@ -5,13 +5,18 @@ import OpenBoardKit
 /**
  What is in front of you, in terms a session can be matched against.
 
- Two surfaces, two handles, and neither is interchangeable with the other: a Terminal tab
- is identified by its tty, a VS Code window by its title. Keeping them as separate cases
- rather than flattening both to a string is what stops a tty being compared against a
- window title and matching nothing for reasons nobody can see.
+ Three surfaces, three handles, and none of them interchangeable: a Terminal tab is
+ identified by its tty, a cmux surface by its id, a VS Code window by its title. Keeping
+ them as separate cases rather than flattening all of them to a string is what stops a
+ tty being compared against a window title and matching nothing for reasons nobody can
+ see.
  */
 enum FocusedSurface: Equatable {
     case terminal(tty: String)
+    /// The id of the cmux surface in front of you. A third handle rather than a reuse
+    /// of `terminal`: cmux surfaces have no tty to compare, and flattening them into the
+    /// same case would silently compare an id against one.
+    case cmux(surface: String)
     /// The title of VS Code's focused window, which leads with the active tab's name —
     /// and the Claude Code extension names its tabs after the session. See
     /// `VSCodeWindows`.
@@ -83,8 +88,10 @@ final class FocusWatcher {
 
     /// Which app is in front, if it is one whose windows we can read.
     private static var readableFrontmost: String? {
-        let frontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-        return [terminalBundleID, VSCodeWindows.bundleID].contains(frontmost) ? frontmost : nil
+        guard let frontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        else { return nil }
+        let readable = [terminalBundleID, Cmux.bundleID, VSCodeWindows.bundleID]
+        return readable.contains(frontmost) ? frontmost : nil
     }
 
     private func frontmostChanged() {
@@ -116,6 +123,9 @@ final class FocusWatcher {
         case terminalBundleID:
             guard let tty = await frontmostTTY() else { return .elsewhere }
             return .terminal(tty: tty)
+        case Cmux.bundleID:
+            guard let surface = await focusedCmuxSurface() else { return .elsewhere }
+            return .cmux(surface: surface)
         case VSCodeWindows.bundleID:
             guard let title = await VSCodeWindows.focusedTitle() else { return .elsewhere }
             return .vscode(windowTitle: title)
@@ -130,6 +140,23 @@ final class FocusWatcher {
         guard last != surface else { return }
         last = surface
         onChange(surface)
+    }
+
+    /**
+     The id of cmux's focused surface.
+
+     No Apple event and no permission — one CLI call over cmux's own socket, off the
+     main thread because it is still a subprocess. Nil when cmux cannot be asked, which
+     reads as "nothing focused", the same as a refused Automation grant does for
+     Terminal: a board that cannot tell must not claim you are looking at something.
+     */
+    private static func focusedCmuxSurface() async -> String? {
+        guard let cli = Focus.cmuxCLI else { return nil }
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                continuation.resume(returning: Cmux.focusedSurfaceID(cli: cli))
+            }
+        }
     }
 
     /// The tty of Terminal's frontmost tab.

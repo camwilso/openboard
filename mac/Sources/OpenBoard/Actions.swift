@@ -260,6 +260,19 @@ enum Actions {
     ///
     /// Bounded: a raise that never lands must not hang the key press.
     private static func confirmFrontmost(_ target: SlotView, timeout: TimeInterval = 1.5) -> Bool {
+        /*
+         Resolve the cmux surface once, before the loop.
+
+         `hasLanded` runs up to nineteen times inside the timeout, and resolving a
+         session's surface from its pid reads cmux's entire process tree. Asking per
+         poll would spend that nineteen times to answer a question whose answer cannot
+         change — the surface id of a live surface is fixed.
+        */
+        var target = target
+        if target.origin == .cmux, target.cmuxSurface == nil, let cli = Focus.cmuxCLI {
+            target.cmuxSurface = Focus.cmuxSurface(for: target, cli: cli)
+        }
+
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             if hasLanded(target) { return true }
@@ -281,6 +294,10 @@ enum Actions {
        already running: guarded the same way `Focus.focusTerminal`/`focusITerm2` are,
        so polling this during `confirmFrontmost`'s retry loop cannot launch an app the
        session was never hosted in.
+     - **cmux** asks cmux which surface is focused and compares its id. Exact, and the
+       only branch that needs no Automation grant to answer. A session whose surface
+       cannot be resolved answers *no* rather than assuming — same rule as the
+       integrated-terminal case below, for the same reason.
      - **VS Code, extension-hosted** compares the focused window's title against the
        session's name. The extension names its tab after the session, so a revealed chat
        puts its name in the window title — see `VSCodeWindows`.
@@ -290,6 +307,13 @@ enum Actions {
        reason the check exists.
      */
     private static func hasLanded(_ target: SlotView) -> Bool {
+        if target.origin == .cmux {
+            guard Focus.isRunning(bundleID: Cmux.bundleID), let cli = Focus.cmuxCLI,
+                  let surface = Focus.cmuxSurface(for: target, cli: cli)
+            else { return false }
+            return Cmux.focusedSurfaceID(cli: cli) == surface
+        }
+
         if target.origin == .vscode {
             guard target.entrypoint == "claude-vscode",
                   target.isNamed, let name = target.title,

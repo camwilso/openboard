@@ -97,8 +97,8 @@ rank in a live recency sort — so typing in one chat can repaint four other key
 you cannot trust is worse than no status.
 
 Only sessions running **on this Mac** get a key, because that is where the hooks execute.
-Terminal and VS Code both work. Subagents deliberately do not — six keys is a scarce
-budget — and anything remote is unreachable.
+Terminal, iTerm2, cmux and VS Code all work. Subagents deliberately do not — six keys is
+a scarce budget — and anything remote is unreachable.
 
 ## Other agents
 
@@ -176,9 +176,10 @@ restart.
        alt="The menu bar popover: four live sessions, two waiting on a permission prompt">
 </p>
 
-**Press an Agent key** to jump to that chat. In Terminal it finds the exact tab; in VS
-Code it reveals the panel already holding that conversation. Nothing is ever *opened* by
-a jump — an approximate jump beats an unrequested one that rearranges your editor.
+**Press an Agent key** to jump to that chat. In Terminal and iTerm2 it finds the exact
+tab; in cmux it selects the exact surface, in whichever workspace it lives; in VS Code it
+reveals the panel already holding that conversation. Nothing is ever *opened* by a jump —
+an approximate jump beats an unrequested one that rearranges your editor.
 
 Where OpenBoard cannot confirm which chat is in front of you, it **refuses to answer a
 prompt** rather than sending ⏎ at whatever happens to be there.
