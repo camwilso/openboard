@@ -257,6 +257,7 @@ public enum WindowTitle {
  */
 public enum SessionOrigin: String, Sendable, Equatable {
     case terminal = "Terminal"
+    case iterm2 = "iTerm2"
     case vscode = "VS Code"
     /// Lower-cased because that is how cmux writes its own name, and a badge that
     /// renames someone's app is a small wrongness the reader has to look past.
@@ -279,6 +280,7 @@ public enum SessionOrigin: String, Sendable, Equatable {
         switch host {
         case .vscode: return .vscode
         case .terminal: return .terminal
+        case .iterm2: return .iterm2
         // A cmux session has a real tty like a Terminal tab, so without this it lands
         // on the Terminal jump — which selects a tab *by tty* and finds none, because
         // Terminal does not own that pty. The same failure VS Code's integrated

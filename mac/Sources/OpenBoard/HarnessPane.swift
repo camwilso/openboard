@@ -476,13 +476,26 @@ struct HarnessPane: View {
 
     // MARK: - surfaces
 
+    /**
+     Where sessions are found, and which of those the board is listening to.
+
+     The switch is only offered for a row that names an owning app, because that is what
+     the board can actually match a session against — see `Harness.Surface.host`. The
+     rows below it describe rules rather than apps and are never given a key by design,
+     so a switch there would be a control that does nothing.
+
+     A muted row goes grey and drops its "Key press →" line. Keeping the green dot and
+     the promise of a jump on a surface the board is ignoring would be the kind of
+     confidently-wrong screen this pane exists to replace.
+     */
     private var surfaceTable: some View {
         VStack(spacing: 0) {
             ForEach(Array(harness.surfaces.enumerated()), id: \.element.id) { index, surface in
                 if index > 0 { Divider().opacity(0.3) }
+                let isListening = surface.host.map { board.surfaces[$0.rawValue] ?? true } ?? false
                 HStack(alignment: .top, spacing: 10) {
                     Circle()
-                        .fill(surface.unsupported == nil
+                        .fill(surface.unsupported == nil && isListening
                             ? Color(RGB(0x09B821))
                             : Color.secondary.opacity(0.4))
                         .frame(width: 7, height: 7)
@@ -499,13 +512,27 @@ struct HarnessPane: View {
                                 .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
-                            Text("Key press → \(surface.jump)")
-                                .font(.system(size: 11))
-                                .foregroundStyle(.tertiary)
-                                .fixedSize(horizontal: false, vertical: true)
+                            if isListening {
+                                Text("Key press → \(surface.jump)")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.tertiary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            } else {
+                                Text("Not listening — sessions here get no key.")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.tertiary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
                     }
                     Spacer(minLength: 0)
+                    if let host = surface.host {
+                        Toggle("", isOn: listeningBinding(host))
+                            .toggleStyle(.switch)
+                            .controlSize(.mini)
+                            .labelsHidden()
+                            .padding(.top, 2)
+                    }
                 }
                 .padding(.vertical, 8)
             }
@@ -531,6 +558,28 @@ struct HarnessPane: View {
         case .otherPath(let path): "points at another install — \(path)"
         case .ok: "ok"
         }
+    }
+
+    /**
+     One surface's listening switch.
+
+     Writes `true` explicitly rather than removing the key when switched back on. Absent
+     and `true` mean the same thing to `Preferences.listens(to:)`, and storing the
+     affirmative is what makes the document say what the pane shows — a setting someone
+     has thought about, rather than one that reads as never having been touched.
+
+     `bindingsChanged()` is what makes it take effect: it saves, then sweeps keys held by
+     a surface that is no longer listened to. Without that, muting a surface would leave
+     its sessions sitting on the board until they ended.
+     */
+    private func listeningBinding(_ host: ProcessAncestry.Host) -> Binding<Bool> {
+        Binding(
+            get: { board.surfaces[host.rawValue] ?? true },
+            set: {
+                board.surfaces[host.rawValue] = $0
+                commands.bindingsChanged()
+            }
+        )
     }
 
     private func notificationBinding(_ kind: String) -> Binding<SessionState?> {

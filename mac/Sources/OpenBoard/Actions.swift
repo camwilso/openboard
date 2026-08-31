@@ -345,7 +345,10 @@ enum Actions {
         guard let tty = target.surface else { return false }
         let wanted = tty.hasPrefix("/dev/") ? tty : "/dev/\(tty)"
 
-        if Focus.isRunning(bundleID: "com.apple.Terminal") {
+        // Skipped for a session known to be in iTerm2, for the reason `Focus.raise`
+        // gives: this is polled, so it would be up to nineteen Apple events to an app
+        // the session is not in.
+        if target.origin != .iterm2, Focus.isRunning(bundleID: "com.apple.Terminal") {
             let result = run("""
             tell application "Terminal"
               repeat with w from 1 to count of windows

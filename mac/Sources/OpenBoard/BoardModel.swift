@@ -51,6 +51,9 @@ final class BoardModel: ObservableObject {
 
     /// Which hooks may repaint. Absent means enabled — muting is opt-in.
     @Published var events: [String: Bool] = [:]
+    /// Which surfaces the board listens to, by host raw value. Absent means listening,
+    /// the same rule as `events` — see `Preferences.surfaces`.
+    @Published var surfaces: [String: Bool] = [:]
     /// Notification subtype → state. `idle_prompt` is deliberately absent.
     @Published var notifications: [String: SessionState] = [:]
     /// The show currently owning the ring, if any.
@@ -85,6 +88,7 @@ final class BoardModel: ObservableObject {
         caps = settings.caps
         snippets = settings.snippets
         events = settings.events
+        surfaces = settings.surfaces
         notifications = settings.notificationStates
     }
 
@@ -103,6 +107,7 @@ final class BoardModel: ObservableObject {
         next.caps = caps
         next.snippets = snippets
         next.events = events
+        next.surfaces = surfaces
         var mapped: [String: SessionState?] = [:]
         for kind in ["permission_prompt", "agent_needs_input", "elicitation_dialog", "idle_prompt"] {
             mapped[kind] = notifications[kind]

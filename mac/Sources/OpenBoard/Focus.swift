@@ -10,8 +10,9 @@ import OpenBoardKit
 
  - **Terminal or iTerm2: exact.** Both apps' AppleScript dictionaries expose `tty` —
    Terminal per tab, iTerm2 per session — and a CLI session's process owns a tty, so
-   the precise tab (or session) can be selected. A tty is tried against Terminal
-   first, then iTerm2, since an exact-match miss cannot mis-raise anything.
+   the precise tab (or session) can be selected. A session known to be in iTerm2 goes
+   straight there; one whose host could not be resolved tries Terminal first and then
+   iTerm2, since an exact-match miss cannot mis-raise anything.
  - **cmux: exact, and not by tty.** cmux has no AppleScript and its surfaces expose no
    tty, so the tty branch cannot reach one — it would select nothing and, before
    `origin` knew about cmux, fell through to opening the folder in an editor. Its own
@@ -66,6 +67,18 @@ enum Focus {
 
         if let tty = slot.surface, tty.hasPrefix("ttys") || tty.hasPrefix("/dev/") {
             let path = tty.hasPrefix("/dev/") ? tty : "/dev/\(tty)"
+
+            /*
+             Known to be iTerm2: ask iTerm2, and nothing else.
+
+             The fallthrough below exists because a tty alone cannot say which of the two
+             owns it. Now that the host can, trying Terminal first is not a harmless
+             extra step — for someone who only uses iTerm2 it is an Apple event to an app
+             the session is not in, and therefore a consent prompt for Terminal they have
+             no reason to grant.
+            */
+            if slot.origin == .iterm2 { return focusITerm2(tty: path) }
+
             switch focusTerminal(tty: path) {
             case .notFound:
                 // The tty is exact-match-or-nothing, so a miss here cannot mis-raise

@@ -51,6 +51,7 @@ runJoystickTests()
 runFocusITerm2Tests()
 runCmuxTests()
 runCmuxDiscoveryTests()
+runSurfaceListeningTests()
 
 // Configuration and where it lives.
 runPreferencesTests()

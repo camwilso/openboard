@@ -114,7 +114,9 @@ execute and only a local process can reach the hardware.
 | Subagents | no — six keys is a scarce budget |
 | claude.ai/code, cloud, SSH | unreachable |
 
-An unrecognised surface gets no key rather than quietly taking one.
+Any of those four apps can be switched off on its own in **Settings → Agents → Where it
+works**, and a surface you switch off gives up the keys it is holding straight away. An
+unrecognised surface gets no key rather than quietly taking one.
 
 ---
 

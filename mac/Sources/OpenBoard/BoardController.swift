@@ -63,6 +63,10 @@ final class BoardController: ObservableObject {
     private var lastOpenLog: String?
     private var lastPresenceLog: String?
     private var lastCmuxLog: String?
+    /// Processes already found to belong to a muted surface, so the walk up the process
+    /// tree is paid once per session rather than once per hook. Cleared whenever the
+    /// setting changes, because the answer then does too.
+    private var mutedPIDs: Set<Int> = []
     private var lastPaintLog: String?
     private var lastAmbientLog: String?
     private var lastPresenceReason: String?
@@ -149,6 +153,16 @@ final class BoardController: ObservableObject {
     /// cleared so a rebind is not swallowed by the previous key's window.
     func bindingsChanged() {
         applyPreferences()
+
+        // Muting a surface is retroactive: the sessions already holding its keys give
+        // them up here, before the repaint below, so the switch has a visible effect
+        // rather than one that arrives whenever those sessions happen to end.
+        //
+        // The cache goes first: a surface switched back on must be able to claim again,
+        // and a pid remembered as muted would keep being refused.
+        mutedPIDs.removeAll()
+        sweepUnlistened()
+        publish()
 
         // Every write saves immediately; the debounce lives in the store, so dragging
         // a slider costs one file write rather than one per frame.
@@ -267,10 +281,39 @@ final class BoardController: ObservableObject {
      */
     func reconnect() {
         let found = Discovery.runningSessions()
-        let added = registry.reconnect(found)
-        Log.write("reconnect: \(found.count) running session(s), \(added) added")
+        // Counted rather than inferred: "9 found, 9 added" and "9 found, 6 added, 3 not
+        // listened to" are the same line without this, and the difference is whether a
+        // switch in Settings is doing anything at all.
+        var skipped = 0
+        let added = registry.reconnect(found, isListening: { host in
+            let listening = self.model.preferences.listens(to: host)
+            if !listening { skipped += 1 }
+            return listening
+        })
+        Log.write(
+            "reconnect: \(found.count) running session(s), \(added) added"
+                + (skipped > 0 ? ", \(skipped) not listened to" : "")
+        )
+        // The backfill inside `reconnect` is the first time a restored entry's host is
+        // known, so a muted surface can only be recognised here — not when the switch
+        // was flipped.
+        sweepUnlistened()
         publish()
         Task { await paint() }
+    }
+
+    /// Free any key held by a surface that is no longer listened to, and say so.
+    ///
+    /// Called after discovery and after a settings edit, which are the two moments the
+    /// answer can change: one learns a host, the other changes the rule.
+    private func sweepUnlistened() {
+        let freed = registry.releaseUnlistened { self.model.preferences.listens(to: $0) }
+        guard !freed.isEmpty else { return }
+        Log.write(
+            "surfaces: freed slot\(freed.count == 1 ? "" : "s") "
+                + freed.map(String.init).joined(separator: ", ")
+                + " — not listening to that surface"
+        )
     }
 
     /// Push configured values into the parts that hold their own copies.
@@ -1169,6 +1212,31 @@ final class BoardController: ObservableObject {
         // arrives with pid=nil and every "jump to slot N" reports noWindow.
         let hookPID = event.environment["CLAUDE_PID"].flatMap(Int.init)
             ?? event.hookPPID.flatMap(Self.claudePID(fromAncestryOf:))
+
+        /*
+         A surface the board is not listening to gets no key.
+
+         Placed here rather than in `Eligibility`, which is pure and answers from the
+         payload and the environment: which app *owns* a session is a question only the
+         process table can answer, and the hook payload cannot carry it. Placed before
+         the adoption and both claims below, so a muted session never takes a key it
+         would immediately have to give back.
+
+         Asked only for a session that is not already on the board, and remembered:
+         hooks arrive several times a minute per session, and every one of them would
+         otherwise pay for the walk up the process tree just to be refused again.
+        */
+        if registry.entry(forSession: sessionID) == nil, let pid = hookPID {
+            let host = mutedPIDs.contains(pid) ? nil : ProcessAncestry.host(ofPID: pid)
+            if let host, !model.preferences.listens(to: host) {
+                mutedPIDs.insert(pid)
+            }
+            if mutedPIDs.contains(pid) {
+                Log.write("hook \(event.name): refused (not listening to that surface)")
+                return
+            }
+        }
+
         if registry.adoptRealSessionID(
             sessionID,
             pid: hookPID,

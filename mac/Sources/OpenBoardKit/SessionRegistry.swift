@@ -437,6 +437,33 @@ public struct SessionRegistry: Sendable, Equatable {
      next claim reuses a number and "oldest claim" — which is how eviction chooses a
      victim — starts pointing at the wrong key.
      */
+    /**
+     Give up the keys held by surfaces the board is no longer listening to.
+
+     Needed because muting is retroactive. A switch that only stopped *future* sessions
+     would leave the ones already on the board sitting there until they ended, which
+     reads as the switch not working — and the keys are the whole point of muting, so
+     leaving them occupied is the one outcome that makes the setting pointless.
+
+     Only entries whose host is actually known are touched. `.unknown` is always
+     listened to (see `Preferences.listens(to:)`), so a session whose owner could not be
+     resolved is never silently swept off the board.
+
+     - Returns: the slots freed, for the log — a key vanishing is worth being able to
+       explain afterwards.
+     */
+    @discardableResult
+    public mutating func releaseUnlistened(
+        isListening: (ProcessAncestry.Host) -> Bool
+    ) -> [Int] {
+        let doomed = entries.filter { !isListening($0.host) }
+        guard !doomed.isEmpty else { return [] }
+        let slots = doomed.map(\.slot).sorted()
+        let ids = Set(doomed.map(\.sessionID))
+        entries.removeAll { ids.contains($0.sessionID) }
+        return slots
+    }
+
     @discardableResult
     public mutating func release(sessionID: String) -> Bool {
         let before = entries.count
