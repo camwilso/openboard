@@ -346,6 +346,21 @@ func runCmuxTests() {
         expect(actions.contains("Cmux.focusedSurfaceID(cli: cli) == surface.id"))
     }
 
+    test("hasLanded also requires cmux to be the frontmost app, not just internally focused") {
+        // `cmux identify` reports the surface cmux has focused within itself whether or
+        // not cmux is in front. On its own it would report "landed" for a session in a
+        // cmux window behind your browser and fire ⏎ into the browser — the exact
+        // misdelivery the check exists to prevent. The Terminal branch asks
+        // `frontmost of window w` and the VS Code branch asks `isFrontmost` for the
+        // same reason; this branch must not be the one that skips it.
+        expect(
+            actions.contains(
+                "NSWorkspace.shared.frontmostApplication?.bundleIdentifier == Cmux.bundleID"
+            ),
+            "the cmux branch must confirm cmux is frontmost before a keystroke is sent"
+        )
+    }
+
     test("the surface is resolved once, not once per poll") {
         // hasLanded runs up to nineteen times inside confirmFrontmost's timeout, and
         // resolving from a pid reads cmux's whole process tree.

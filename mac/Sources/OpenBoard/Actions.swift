@@ -294,10 +294,12 @@ enum Actions {
        already running: guarded the same way `Focus.focusTerminal`/`focusITerm2` are,
        so polling this during `confirmFrontmost`'s retry loop cannot launch an app the
        session was never hosted in.
-     - **cmux** asks cmux which surface is focused and compares its id. Exact, and the
-       only branch that needs no Automation grant to answer. A session whose surface
-       cannot be resolved answers *no* rather than assuming — same rule as the
-       integrated-terminal case below, for the same reason.
+     - **cmux** requires two things: that cmux is the frontmost *application*, which is
+       what decides where the keystroke goes, and that the surface cmux has focused
+       within itself is this session's. Exact, and the only branch that needs no
+       Automation grant to answer. A session whose surface cannot be resolved answers
+       *no* rather than assuming — same rule as the integrated-terminal case below, for
+       the same reason.
      - **VS Code, extension-hosted** compares the focused window's title against the
        session's name. The extension names its tab after the session, so a revealed chat
        puts its name in the window title — see `VSCodeWindows`.
@@ -308,7 +310,24 @@ enum Actions {
      */
     private static func hasLanded(_ target: SlotView) -> Bool {
         if target.origin == .cmux {
-            guard Focus.isRunning(bundleID: Cmux.bundleID), let cli = Focus.cmuxCLI,
+            /*
+             Two conditions, and the first one is the one that matters.
+
+             `cmux identify` reports which surface cmux has focused *within itself*,
+             which it does whether or not cmux is the application in front of you. On
+             its own that is not evidence the keystroke will arrive: the ⏎ goes to
+             whatever macOS says is frontmost, so a session correctly focused inside a
+             cmux window sitting behind your browser would report "landed" and fire ⏎
+             into the browser.
+
+             That is the precise misdelivery this whole check exists to prevent, and it
+             is why the Terminal branch asks `frontmost of window w` rather than just
+             comparing ttys, and why the VS Code branch asks `isFrontmost`. Asked of
+             `NSWorkspace` rather than of cmux — in-process, no subprocess, and it is the
+             same authority that decides where synthetic input lands.
+            */
+            guard NSWorkspace.shared.frontmostApplication?.bundleIdentifier == Cmux.bundleID,
+                  let cli = Focus.cmuxCLI,
                   let surface = Focus.cmuxSurface(for: target, cli: cli)
             else { return false }
             return Cmux.focusedSurfaceID(cli: cli) == surface.id
