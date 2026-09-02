@@ -122,7 +122,7 @@ whether those signals really are missing, that is worth more than a patch — se
 ## Requirements
 
 - macOS 14 or later, Apple Silicon or Intel
-- A Work Louder Codex Micro, paired over Bluetooth or USB
+- A Work Louder Codex Micro or Creator Micro 2, paired over Bluetooth or USB
 - Claude Code
 
 That is the whole list. Neither the ChatGPT app nor Work Louder's Input app needs to be

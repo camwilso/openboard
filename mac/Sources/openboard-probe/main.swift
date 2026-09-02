@@ -93,7 +93,7 @@ if CommandLine.arguments.contains("--props") {
     let found = (IOHIDManagerCopyDevices(matching) as? Set<IOHIDDevice>) ?? []
     for hid in found {
         let name = IOHIDDeviceGetProperty(hid, kIOHIDProductKey as CFString) as? String ?? "?"
-        guard name.lowercased().contains("codex") else { continue }
+        guard CodexProtocol.isKnownProductName(name) else { continue }
         print("device: \(name)")
         for key in candidates {
             if let value = IOHIDDeviceGetProperty(hid, key as CFString) {

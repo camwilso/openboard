@@ -34,11 +34,6 @@ final class BatteryMonitor: NSObject, ObservableObject {
     @Published private(set) var percent: Int?
     @Published private(set) var lastRead: Date?
 
-    /// The device we care about. Matched by name because the peripheral identifier is
-    /// a per-host UUID, not the Bluetooth address, so it cannot be compared with what
-    /// the HID layer knows.
-    private let nameFragment = "codex"
-
     private var central: CBCentralManager?
     private var peripheral: CBPeripheral?
     private var refreshTimer: Timer?
@@ -87,8 +82,12 @@ final class BatteryMonitor: NSObject, ObservableObject {
         // Devices already connected to the *system*. This does not pair, does not
         // steal the connection, and does not disturb the HID stream the board runs on.
         let connected = central.retrieveConnectedPeripherals(withServices: [Self.service])
+        // Matched by name because the peripheral identifier is a per-host UUID, not
+        // the Bluetooth address, so it cannot be compared with what the HID layer
+        // knows. The name list is shared with that layer, so a board OpenBoard drives
+        // cannot be lit on the pad and yet report no battery here.
         let candidates = connected.filter {
-            ($0.name ?? "").lowercased().contains(nameFragment)
+            CodexProtocol.isKnownProductName($0.name ?? "")
         }
         /*
          More than one pad can match.

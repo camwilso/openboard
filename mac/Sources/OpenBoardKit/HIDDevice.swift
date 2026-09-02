@@ -130,7 +130,7 @@ public final class HIDDevice: @unchecked Sendable {
     /// completely different messages to show a user.
     public static func survey() -> Survey {
         guard let manager = makeManager() else { return Survey(matched: 0, vendorInterfaces: 0) }
-        IOHIDManagerSetDeviceMatching(manager, matchingDictionary() as CFDictionary)
+        IOHIDManagerSetDeviceMatchingMultiple(manager, matchingDictionaries() as CFArray)
         IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
         defer {
             IOHIDManagerUnscheduleFromRunLoop(manager, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
@@ -157,11 +157,19 @@ public final class HIDDevice: @unchecked Sendable {
         IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
     }
 
-    private static func matchingDictionary() -> [String: Any] {
-        [
-            kIOHIDVendorIDKey: CodexProtocol.vendorID,
-            kIOHIDProductIDKey: CodexProtocol.productID,
-        ]
+    /// One dictionary per supported board.
+    ///
+    /// `IOHIDManagerSetDeviceMatching` takes a single dictionary and treats every key
+    /// in it as a requirement, so a list of product ids cannot be expressed that way.
+    /// Dropping the product id instead would match every Espressif HID device on the
+    /// machine, which is a much larger family than this pad.
+    private static func matchingDictionaries() -> [[String: Any]] {
+        CodexProtocol.productIDs.map { productID in
+            [
+                kIOHIDVendorIDKey: CodexProtocol.vendorID,
+                kIOHIDProductIDKey: productID,
+            ]
+        }
     }
 
     private static func intProperty(_ device: IOHIDDevice, _ key: String) -> Int? {
@@ -199,7 +207,7 @@ public final class HIDDevice: @unchecked Sendable {
         guard device == nil else { return }
 
         guard let manager = Self.makeManager() else { throw CodexError.noVendorInterface }
-        IOHIDManagerSetDeviceMatching(manager, Self.matchingDictionary() as CFDictionary)
+        IOHIDManagerSetDeviceMatchingMultiple(manager, Self.matchingDictionaries() as CFArray)
         IOHIDManagerScheduleWithRunLoop(
             manager, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue
         )
