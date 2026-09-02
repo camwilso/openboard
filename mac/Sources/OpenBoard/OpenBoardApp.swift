@@ -26,8 +26,25 @@ struct OpenBoardApp: App {
     /// dispatcher all drive the same controller through the same closures.
     private var commands: BoardCommands { delegate.commands }
 
+    /**
+     Whether the status item is in the menu bar.
+
+     Without this binding, `MenuBarExtra` gives its status item
+     `.terminationOnRemoval`: the moment the item leaves the menu bar — ⌘-dragged off,
+     or hidden by macOS 26's menu bar management — the app quits. AppKit then records
+     the item as not visible, restores it hidden on the next launch, and SwiftUI quits
+     again about a second in, with nothing in the log and no crash report. The app
+     could not be opened at all until `NSStatusItem Visible…` was cleared by hand, and
+     even that did not hold once Control Center was the one hiding it.
+
+     With the binding, removal flips this to false instead of quitting, and starting at
+     `true` re-inserts the item on every launch. The pad, the hooks and the socket keep
+     running either way — the icon is the app's shadow, not the app.
+     */
+    @State private var isInMenuBar = true
+
     var body: some Scene {
-        MenuBarExtra {
+        MenuBarExtra(isInserted: $isInMenuBar) {
             PopoverView()
                 .environmentObject(delegate.board)
                 .environmentObject(delegate.battery)
