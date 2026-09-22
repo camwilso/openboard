@@ -93,7 +93,9 @@ final class BoardController: ObservableObject {
 
     private var voiceIsActive: Bool {
         // A held custom shortcut is not dictation; only the voice key's hold counts.
-        if let key = pushToTalk.heldBy, model.actions[key] == .voiceTalk { return true }
+        // The hold says so itself: looking its key up in the actions map instead
+        // missed the long-press keys, whose "ENC.long" is not a key the map has.
+        if pushToTalk.isDictation { return true }
         return voice.isActive()
     }
 
@@ -624,7 +626,7 @@ final class BoardController: ObservableObject {
         case .voiceTalk:
             // The release edge ends it — see PushToTalk for why this is never trusted
             // to happen on its own.
-            pushToTalk.begin(key: key)
+            pushToTalk.begin(key: key, dictation: true)
 
         case .voiceToggle:
             let result = Actions.toggleVoice()

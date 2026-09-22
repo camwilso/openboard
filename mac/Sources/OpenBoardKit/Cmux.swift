@@ -410,11 +410,28 @@ public enum Cmux {
         let exited = DispatchSemaphore(value: 0)
         process.terminationHandler = { _ in exited.signal() }
         do { try process.run() } catch { return "" }
-        // Read before waiting: `top` prints more than a pipe buffer holds on a busy
-        // machine, and waiting first would deadlock against a full pipe.
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        _ = exited.wait(timeout: .now() + 3)
-        guard process.terminationStatus == 0 else { return "" }
-        return String(data: data, encoding: .utf8) ?? ""
+        // Read on a background queue, still before waiting for exit: `top` prints
+        // more than a pipe buffer holds on a busy machine, and waiting first would
+        // deadlock against a full pipe. The read itself has no timeout of its own,
+        // though — a wedged CLI that keeps its stdout open would park this thread,
+        // and some callers are the main actor. So the timeout covers the read too.
+        final class Box: @unchecked Sendable { var data = Data() }
+        let box = Box()
+        let read = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .userInitiated).async {
+            box.data = pipe.fileHandleForReading.readDataToEndOfFile()
+            read.signal()
+        }
+        guard read.wait(timeout: .now() + 3) == .success else {
+            // Ending the process is what unblocks the reader thread; without it the
+            // wedged read would leak a thread per call.
+            process.terminate()
+            return ""
+        }
+        // A timeout here leaves the process running, and `terminationStatus` on a
+        // running process raises rather than returning.
+        guard exited.wait(timeout: .now() + 3) == .success,
+              process.terminationStatus == 0 else { return "" }
+        return String(data: box.data, encoding: .utf8) ?? ""
     }
 }

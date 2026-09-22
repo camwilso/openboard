@@ -31,6 +31,10 @@ final class PushToTalk {
     /// otherwise any other key's release would end the dictation.
     private var holding: Shortcut?
     private(set) var heldBy: String?
+    /// Whether the current hold is dictation, as opposed to a custom chord. Declared
+    /// by the caller at `begin` — inferring it from `heldBy` breaks for the long-press
+    /// keys, whose name ("ENC.long") is not the key the actions map knows ("ENC").
+    private(set) var isDictation = false
     var isHeld: Bool { holding != nil }
     private var heldSince: Date?
 
@@ -43,7 +47,7 @@ final class PushToTalk {
     }
 
     /// Begin a hold. Idempotent: a repeat `down` extends nothing and starts nothing.
-    func begin(_ shortcut: Shortcut = .space, key: String) {
+    func begin(_ shortcut: Shortcut = .space, key: String, dictation: Bool = false) {
         guard !isHeld else {
             log("hold: already held, ignoring a second press")
             return
@@ -55,6 +59,7 @@ final class PushToTalk {
         }
         holding = shortcut
         heldBy = key
+        isDictation = dictation
         heldSince = Date()
         log("hold: \(shortcut.label) down")
 
@@ -78,6 +83,7 @@ final class PushToTalk {
         guard let shortcut = holding else { return }
         holding = nil
         heldBy = nil
+        isDictation = false
 
         let result = Actions.hold(shortcut, down: false)
         let duration = heldSince.map { Date().timeIntervalSince($0) } ?? 0

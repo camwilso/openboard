@@ -30,6 +30,10 @@ func runShortcutTests() {
 
     test("a document without a key code is not a shortcut") {
         expect(Shortcut(json: ["modifiers": ["command"], "key": "Y"]) == nil)
+        // Neither is one whose key code cannot be a CGKeyCode — sending it would
+        // trap on the UInt16 conversion, at key-press time.
+        expect(Shortcut(json: ["keyCode": -1]) == nil)
+        expect(Shortcut(json: ["keyCode": 70000]) == nil)
     }
 
     test("unknown modifiers and modes degrade rather than fail") {

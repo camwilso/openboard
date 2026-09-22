@@ -62,10 +62,13 @@ public struct Shortcut: Equatable, Sendable {
 
     // MARK: - the file
 
-    /// Nil without a key code — there is nothing to send. Anything else degrades: an
-    /// unknown modifier name is skipped, an unknown mode is a tap.
+    /// Nil without a sendable key code — `CGKeyCode` is a `UInt16`, and a hand-edited
+    /// value outside its range would trap at the moment the pad key is pressed, not
+    /// here. Anything else degrades: an unknown modifier name is skipped, an unknown
+    /// mode is a tap.
     public init?(json: [String: Any]) {
-        guard let keyCode = json["keyCode"] as? Int else { return nil }
+        guard let keyCode = json["keyCode"] as? Int, UInt16(exactly: keyCode) != nil
+        else { return nil }
         self.keyCode = keyCode
         let names = json["modifiers"] as? [String] ?? []
         modifiers = Set(names.compactMap(Modifier.init(rawValue:)))
