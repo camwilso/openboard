@@ -569,6 +569,9 @@ struct CapInspector: View {
                     }
                     .labelsHidden()
                 }
+                if board.preferences.encoder.click?.needsShortcut == true {
+                    shortcutSection(key: "ENC", allowHold: false)
+                }
 
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
@@ -592,6 +595,9 @@ struct CapInspector: View {
                     // classifying on release gives no feedback that you have held it
                     // long enough, so people let go early and get the wrong action.
                 }
+                if board.preferences.encoder.longPress?.needsShortcut == true {
+                    shortcutSection(key: "ENC.long", allowHold: false)
+                }
 
             case .element(.joystick):
                 ForEach(Joystick.Direction.allCases, id: \.self) { direction in
@@ -606,6 +612,9 @@ struct CapInspector: View {
                             }
                         }
                         .labelsHidden()
+                    }
+                    if board.preferences.joystick.action(for: direction)?.needsShortcut == true {
+                        shortcutSection(key: "JOY.\(direction.rawValue)", allowHold: false)
                     }
                 }
 
@@ -636,6 +645,9 @@ struct CapInspector: View {
                             .font(.system(size: 11)).foregroundStyle(.secondary)
                     }
                 }
+                if board.actions[cell.id]?.needsShortcut == true {
+                    shortcutSection(key: cell.id, allowHold: true)
+                }
                 capPicker(allowNone: false)
                 if cell.span > 1 {
                     // Kept: the title reads "ACT10 + ACT11", which looks like two keys
@@ -655,6 +667,52 @@ struct CapInspector: View {
             .font(.system(size: 12.5))
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// The chord a `.shortcut` binding sends and, on the action caps only, whether the
+    /// pad key taps or holds it. Shaped like the snippet block. The dial's hold and the
+    /// stick have no release edge, so they are never offered hold.
+    @ViewBuilder
+    private func shortcutSection(key: String, allowHold: Bool) -> some View {
+        let recorded = board.preferences.shortcuts[key]
+        VStack(alignment: .leading, spacing: 6) {
+            Text("SHORTCUT IT SENDS")
+                .font(.system(size: 10, weight: .semibold)).kerning(0.8)
+                .foregroundStyle(.tertiary)
+            ShortcutRecorder(shortcut: recorded) { chord in
+                var next = chord
+                next.mode = recorded?.mode ?? .tap
+                board.updatePreferences { $0.shortcuts[key] = next }
+                commands.bindingsChanged()
+            }
+            Text("Press the keys on your keyboard. Esc cancels.")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+        }
+        if allowHold, recorded != nil {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("WHEN PRESSED")
+                    .font(.system(size: 10, weight: .semibold)).kerning(0.8)
+                    .foregroundStyle(.tertiary)
+                Picker("", selection: shortcutModeBinding(key)) {
+                    Text("Taps it").tag(Shortcut.Mode.tap)
+                    Text("Holds it while pressed").tag(Shortcut.Mode.hold)
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                Text("Hold keeps the chord down until you let go, like hold to dictate.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func shortcutModeBinding(_ key: String) -> Binding<Shortcut.Mode> {
+        Binding(
+            get: { board.preferences.shortcuts[key]?.mode ?? .tap },
+            set: { mode in
+                board.updatePreferences { $0.shortcuts[key]?.mode = mode }
+                commands.bindingsChanged()
+            }
+        )
     }
 
     private func actionPicker(title: String, key: String) -> some View {

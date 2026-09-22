@@ -31,6 +31,9 @@ public struct Preferences: Equatable, Sendable {
     /// is different from a key that is absent and inherits its default.
     public var actionKeys: [String: KeyAction?]
     public var snippets: [String: String]
+    /// Chords for keys bound to `.shortcut`, keyed like `snippets` — plus `ENC`,
+    /// `ENC.long` and `JOY.up`… for the controls whose bindings share one name.
+    public var shortcuts: [String: Shortcut]
     /// Keycap icon per key. New in the app; absent from Node documents, which is fine.
     public var caps: [String: String]
     /**
@@ -286,6 +289,7 @@ public struct Preferences: Equatable, Sendable {
         states: [String: Appearance],
         actionKeys: [String: KeyAction?],
         snippets: [String: String],
+        shortcuts: [String: Shortcut] = [:],
         caps: [String: String],
         deviceNames: [String: String] = [:],
         harnessesSeen: [String] = [],
@@ -306,6 +310,7 @@ public struct Preferences: Equatable, Sendable {
         self.states = states
         self.actionKeys = actionKeys
         self.snippets = snippets
+        self.shortcuts = shortcuts
         self.caps = caps
         self.deviceNames = deviceNames
         self.harnessesSeen = harnessesSeen
@@ -394,6 +399,15 @@ extension Preferences {
 
         if let snippets = json["snippets"] as? [String: String] {
             result.snippets.merge(snippets) { _, new in new }
+        }
+        if let shortcuts = json["shortcuts"] as? [String: Any] {
+            // An entry without a key code is skipped, not fatal — like an unknown
+            // action name in `actionKeys`.
+            for (key, raw) in shortcuts {
+                guard let fields = raw as? [String: Any],
+                      let shortcut = Shortcut(json: fields) else { continue }
+                result.shortcuts[key] = shortcut
+            }
         }
         if let caps = json["caps"] as? [String: String] {
             result.caps.merge(caps) { _, new in new }
@@ -567,6 +581,7 @@ extension Preferences {
             "states": states,
             "actionKeys": keys,
             "snippets": snippets,
+            "shortcuts": shortcuts.mapValues(\.json),
             "caps": caps,
             "deviceNames": deviceNames,
             "harnessesSeen": harnessesSeen,

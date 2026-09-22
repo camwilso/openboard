@@ -2,7 +2,8 @@ import Foundation
 import OpenBoardKit
 
 /**
- Hold-to-talk, with the safety the raw key events do not have.
+ Hold a key down — space for dictation, or any recorded chord — with the safety the
+ raw key events do not have.
 
  ## Why this is its own type
 
@@ -26,7 +27,11 @@ import OpenBoardKit
 final class PushToTalk {
     private let log: (String) -> Void
     private var releaseTask: Task<Void, Never>?
-    private(set) var isHeld = false
+    /// What is down, and which pad key put it there. Only that key's release ends it;
+    /// otherwise any other key's release would end the dictation.
+    private var holding: Shortcut?
+    private(set) var heldBy: String?
+    var isHeld: Bool { holding != nil }
     private var heldSince: Date?
 
     /// The backstop. Long enough not to cut off real dictation, short enough that a
@@ -38,19 +43,20 @@ final class PushToTalk {
     }
 
     /// Begin a hold. Idempotent: a repeat `down` extends nothing and starts nothing.
-    func begin() {
+    func begin(_ shortcut: Shortcut = .space, key: String) {
         guard !isHeld else {
             log("hold: already held, ignoring a second press")
             return
         }
-        let result = Actions.holdSpace(down: true)
+        let result = Actions.hold(shortcut, down: true)
         guard result.ok else {
-            log("hold: could not press space — \(result.detail)")
+            log("hold: could not press \(shortcut.label) — \(result.detail)")
             return
         }
-        isHeld = true
+        holding = shortcut
+        heldBy = key
         heldSince = Date()
-        log("hold: space down")
+        log("hold: \(shortcut.label) down")
 
         releaseTask?.cancel()
         releaseTask = Task { [weak self, maxHoldSeconds] in
@@ -69,15 +75,16 @@ final class PushToTalk {
     func end(reason: String = "released") {
         releaseTask?.cancel()
         releaseTask = nil
-        guard isHeld else { return }
-        isHeld = false
+        guard let shortcut = holding else { return }
+        holding = nil
+        heldBy = nil
 
-        let result = Actions.holdSpace(down: false)
+        let result = Actions.hold(shortcut, down: false)
         let duration = heldSince.map { Date().timeIntervalSince($0) } ?? 0
         heldSince = nil
         log(result.ok
-            ? String(format: "hold: space up after %.1fs (%@)", duration, reason)
-            : "hold: COULD NOT RELEASE space — \(result.detail)")
+            ? String(format: "hold: %@ up after %.1fs (%@)", shortcut.label, duration, reason)
+            : "hold: COULD NOT RELEASE \(shortcut.label) — \(result.detail)")
     }
 
     /// Called on quit. The whole point of the type.

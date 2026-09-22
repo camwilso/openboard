@@ -87,6 +87,18 @@ func runPreferencesTests() {
         expect(prefs.actionKeys["ACT11"] != nil, "the decision itself is recorded")
     }
 
+    test("a shortcut without a key code is skipped, not fatal") {
+        let prefs = Preferences.merging(["shortcuts": [
+            "ACT08": ["keyCode": 49, "modifiers": ["control"], "key": "Space", "mode": "hold"],
+            "ENC": ["modifiers": ["command"]],
+        ]])
+        expectEqual(
+            prefs.shortcuts["ACT08"],
+            Shortcut(keyCode: 49, modifiers: [.control], key: "Space", mode: .hold)
+        )
+        expect(prefs.shortcuts["ENC"] == nil, "an entry with nothing to send was kept")
+    }
+
     test("a color may be a number or a hex string") {
         // Numbers are what Node wrote; hex is what a person types.
         expectEqual(
@@ -165,6 +177,10 @@ func runPreferencesTests() {
         prefs.actionKeys["ACT06"] = KeyAction?.none          // explicitly unassigned
         prefs.actionKeys["ACT07"] = .snippet
         prefs.snippets["ACT07"] = "/review"
+        prefs.shortcuts["ACT08"] = Shortcut(
+            keyCode: 49, modifiers: [.control, .option], key: "Space", mode: .hold
+        )
+        prefs.shortcuts["JOY.up"] = Shortcut(keyCode: 16, modifiers: [.command], key: "Y")
         prefs.caps["ACT07"] = "MAGIC"
         prefs.events["Stop"] = false
         prefs.notifications["idle_prompt"] = SessionState.awaiting

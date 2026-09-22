@@ -82,7 +82,8 @@ final class BoardController: ObservableObject {
     private var voiceGraceTask: Task<Void, Never>?
 
     private var voiceIsActive: Bool {
-        if pushToTalk.isHeld { return true }
+        // A held custom shortcut is not dictation; only the voice key's hold counts.
+        if let key = pushToTalk.heldBy, model.actions[key] == .voiceTalk { return true }
         return voice.isActive()
     }
 
@@ -433,7 +434,7 @@ final class BoardController: ObservableObject {
         // part that cannot be verified by reading the code — it depends on how the
         // hardware is oriented.
         Log.write(String(format: "stick %@ (a=%.3f)", direction.rawValue, angle))
-        perform(action, key: "JOY")
+        perform(action, key: "JOY.\(direction.rawValue)")
     }
 
     private func handle(key event: KeyEvent) {
@@ -452,7 +453,7 @@ final class BoardController: ObservableObject {
             // release would end the dictation.
             if key == "ENC_CLK" {
                 encoderReleased()
-            } else if pushToTalk.isHeld, model.actions[key] == .voiceTalk {
+            } else if pushToTalk.heldBy == key {
                 pushToTalk.end()
                 Task { await paint() }
             }
@@ -517,6 +518,27 @@ final class BoardController: ObservableObject {
             let result = Actions.typeSnippet(text)
             Log.write(result.ok ? "key \(key): typed \(text)" : "key \(key): \(result.detail)")
 
+        case .enter:
+            let result = Actions.pressEnter()
+            Log.write(result.ok ? "key \(key): sent ⏎" : "key \(key): \(result.detail)")
+
+        case .shortcut:
+            guard let shortcut = model.preferences.shortcuts[key] else {
+                Log.write("key \(key): no shortcut recorded")
+                return
+            }
+            // Hold needs a release edge, and only the action caps deliver one. The file
+            // is hand-editable, so a hold on the dial or the stick is sent as a tap
+            // rather than left to the 60s backstop.
+            let canHold = BoardLayout.cells.contains { $0.isAction && $0.id == key }
+            if shortcut.mode == .hold, canHold {
+                pushToTalk.begin(shortcut, key: key)
+            } else {
+                if shortcut.mode == .hold { Log.write("key \(key): cannot hold here — tapping") }
+                let result = Actions.press(shortcut)
+                Log.write(result.ok ? "key \(key): sent \(shortcut.label)" : "key \(key): \(result.detail)")
+            }
+
         case .newtab:
             let result = Actions.newTerminalTab()
             Log.write(result.ok ? "key \(key): opened a Terminal tab" : "key \(key): \(result.detail)")
@@ -537,7 +559,7 @@ final class BoardController: ObservableObject {
         case .voiceTalk:
             // The release edge ends it — see PushToTalk for why this is never trusted
             // to happen on its own.
-            pushToTalk.begin()
+            pushToTalk.begin(key: key)
 
         case .voiceToggle:
             let result = Actions.toggleVoice()
@@ -828,7 +850,7 @@ final class BoardController: ObservableObject {
             guard !Task.isCancelled, self.encoderClick.shouldFireLong() else { return }
             guard let action = self.model.preferences.encoder.longPress else { return }
             Log.write("key ENC: held past \(Int(self.encoderClick.threshold * 1000))ms")
-            self.perform(action, key: "ENC")
+            self.perform(action, key: "ENC.long")
         }
     }
 

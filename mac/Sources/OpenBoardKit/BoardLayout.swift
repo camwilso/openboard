@@ -181,6 +181,11 @@ public enum KeyAction: String, CaseIterable, Sendable, Codable {
     /// next or previous occupied key. The one navigation that is about *this* app.
     case prevSession = "prev-session"
     case nextSession = "next-session"
+    /// Submit whatever is being typed. Unconditional, unlike `approve`, which answers
+    /// the one waiting session and refuses otherwise.
+    case enter
+    /// Replay a chord recorded in Settings — the payload is a `Shortcut`.
+    case shortcut
 
     /// Short label, as the popover's keycap grid shows it.
     public var short: String {
@@ -206,6 +211,8 @@ public enum KeyAction: String, CaseIterable, Sendable, Codable {
         case .arrowRight: "arrow right"
         case .prevSession: "previous session"
         case .nextSession: "next session"
+        case .enter: "send ⏎"
+        case .shortcut: "custom shortcut"
         }
     }
 
@@ -227,6 +234,8 @@ public enum KeyAction: String, CaseIterable, Sendable, Codable {
         case .arrowRight: "arrow right"
         case .prevSession: "previous session"
         case .nextSession: "next session"
+        case .enter: "send ⏎ to the focused window"
+        case .shortcut: "custom keyboard shortcut (recorded below)"
         default: short
         }
     }
@@ -234,13 +243,14 @@ public enum KeyAction: String, CaseIterable, Sendable, Codable {
     /// Glyph overlaid on the keycap for the two that send a literal keystroke.
     public var hint: String? {
         switch self {
-        case .approve: "⏎"
+        case .approve, .enter: "⏎"
         case .reject: "⎋"
         default: nil
         }
     }
 
     public var needsSnippetText: Bool { self == .snippet }
+    public var needsShortcut: Bool { self == .shortcut }
 
     /**
      What the joystick can usefully be bound to.
@@ -253,7 +263,7 @@ public enum KeyAction: String, CaseIterable, Sendable, Codable {
     public static var forJoystick: [KeyAction] {
         [.arrowUp, .arrowDown, .arrowLeft, .arrowRight,
          .tabBack, .tabForward, .prevSession, .nextSession,
-         .approve, .reject, .snippet]
+         .approve, .reject, .snippet, .enter, .shortcut]
     }
 
     /// Shipped bindings, from `lib/config.cjs`.

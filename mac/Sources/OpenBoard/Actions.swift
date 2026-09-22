@@ -142,15 +142,49 @@ enum Actions {
      */
     @discardableResult
     static func holdSpace(down: Bool) -> Result {
+        hold(.space, down: down)
+    }
+
+    /// Hold or release any chord. Everything said of `holdSpace` applies.
+    @discardableResult
+    static func hold(_ shortcut: Shortcut, down: Bool) -> Result {
         guard let event = CGEvent(
             keyboardEventSource: nil,
-            virtualKey: CGKeyCode(keySpace),
+            virtualKey: CGKeyCode(shortcut.keyCode),
             keyDown: down
         ) else {
             return Result(ok: false, detail: "could not create a key event")
         }
+        event.flags = flags(for: shortcut)
         event.post(tap: .cghidEventTap)
         return Result(ok: true, detail: "")
+    }
+
+    // MARK: - custom shortcuts
+
+    /// Tap ⏎ into whatever is focused. Unconditional — `respond` is the one that
+    /// checks who is waiting first.
+    static func pressEnter() -> Result {
+        sendKey(CGKeyCode(keyReturn))
+    }
+
+    /// Tap a recorded chord once.
+    static func press(_ shortcut: Shortcut) -> Result {
+        sendKey(CGKeyCode(shortcut.keyCode), flags: flags(for: shortcut))
+    }
+
+    private static func flags(for shortcut: Shortcut) -> CGEventFlags {
+        var flags: CGEventFlags = []
+        for modifier in shortcut.modifiers {
+            switch modifier {
+            case .control: flags.insert(.maskControl)
+            case .option: flags.insert(.maskAlternate)
+            case .shift: flags.insert(.maskShift)
+            case .command: flags.insert(.maskCommand)
+            case .function: flags.insert(.maskSecondaryFn)
+            }
+        }
+        return flags
     }
 
     // MARK: - the joystick

@@ -153,7 +153,7 @@ menu bar.
 | | |
 |---|---|
 | **Input Monitoring** | reading the pad — every light and every key press |
-| **Accessibility** | typing snippets, sending ⏎ and ⎋, scrolling with the dial |
+| **Accessibility** | typing snippets, sending ⏎ and ⎋, custom shortcuts, scrolling with the dial |
 | **Automation** | granted in place, without a trip to System Settings |
 | **Key order** | ten seconds, and worth it — colours are set per *slot* |
 | **Claude Code hooks** | so your sessions report what they are doing |

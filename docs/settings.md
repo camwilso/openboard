@@ -32,6 +32,12 @@ Every key other than the six Agent keys is yours to bind. The defaults:
 | fun mode | the party trick, see below |
 | the dial | press for the popover, hold for Settings |
 
+Two more are there to bind but are not defaults. **send ⏎** submits whatever you are
+typing, wherever the cursor is. **custom shortcut** replays any keyboard chord you record —
+pick it, click *Record shortcut*, press the keys. On the action keys you can choose whether
+the pad key taps the chord or holds it down for as long as you hold the key, which is how a
+push-to-talk hotkey wants to be driven; the dial and the joystick only tap.
+
 ## Colors — states, laps and shows
 
 Every state, with its colour, its effect and its brightness:

@@ -52,6 +52,7 @@ runFocusITerm2Tests()
 
 // Configuration and where it lives.
 runPreferencesTests()
+runShortcutTests()
 runAppPathsTests()
 runKeyOrderTests()
 runHoldTests2()
