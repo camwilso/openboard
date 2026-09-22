@@ -164,6 +164,21 @@ public enum KeyAction: String, CaseIterable, Sendable, Codable {
     case reject
     case snippet
     case newtab
+    /**
+     A new tab, and a new workspace, in cmux.
+
+     Two actions rather than one because cmux has two things a "new tab" key could
+     reasonably mean, and it names them itself: ⌘T is a new **surface** — a tab inside
+     the pane you are in — and ⌘N is a new **workspace**, which is what cmux's own
+     shortcut list calls `newTab`. Guessing between them would be guessing at someone's
+     habit; both are one call, so both are offered.
+
+     Neither is a variant of `newtab`, which sends ⌘T to Terminal.app. A key bound to
+     that in a cmux session opens a Terminal window behind cmux — the wrong app, doing
+     the right thing.
+     */
+    case newtabCmux = "newtab-cmux"
+    case newWorkspaceCmux = "newworkspace-cmux"
     case voiceTap = "voice-tap"
     case voiceTalk = "voice-talk"
     case voiceToggle = "voice-toggle"
@@ -198,6 +213,8 @@ public enum KeyAction: String, CaseIterable, Sendable, Codable {
         case .reject: "reject"
         case .snippet: "type snippet"
         case .newtab: "new Terminal tab"
+        case .newtabCmux: "new cmux tab"
+        case .newWorkspaceCmux: "new cmux workspace"
         case .voiceTap: "tap to dictate"
         case .voiceTalk: "hold to dictate"
         case .voiceToggle: "toggle voice"
@@ -223,6 +240,8 @@ public enum KeyAction: String, CaseIterable, Sendable, Codable {
         case .approve: "approve pending prompt (⏎)"
         case .reject: "reject pending prompt (⎋) / cancel fun mode"
         case .snippet: "type snippet at cursor"
+        case .newtabCmux: "new cmux tab (in the workspace you are in)"
+        case .newWorkspaceCmux: "new cmux workspace (cmux's own ⌘N)"
         case .voiceTalk: "hold to dictate (needs voice.mode=hold)"
         case .countdown: "FUN MODE — play the video, lights follow"
         case .popover: "open the menu bar dropdown"

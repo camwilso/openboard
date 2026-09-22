@@ -63,6 +63,23 @@ public struct Preferences: Equatable, Sendable {
      */
     public var harnessesSeen: [String]
     public var events: [String: Bool]
+    /**
+     Which surfaces the board listens to, by `ProcessAncestry.Host` raw value.
+
+     **Absent means listening**, the same rule `events` uses, and for the same reason: a
+     document written by an older build knows about fewer surfaces, and a missing key
+     that meant "off" would silently stop the board watching a host it had always
+     watched. New surfaces therefore arrive switched on, which is what someone who has
+     not opened this pane expects.
+
+     Muting a surface is not cosmetic — a session there is refused a key, and one
+     already holding a key gives it up. Six keys is a scarce budget, and someone who
+     runs an editor terminal all day may simply not want it competing for them.
+
+     Surfaces that never get a key by design (subagents, embedded SDK clients, anything
+     remote) are not represented here: there is nothing to turn off.
+     */
+    public var surfaces: [String: Bool]
     public var notifications: [String: SessionState?]
     public var encoder: Encoder
     public var joystick: Joystick
@@ -270,6 +287,7 @@ public struct Preferences: Equatable, Sendable {
         deviceNames: [:],
         harnessesSeen: [],
         events: [:],
+        surfaces: [:],
         notifications: EventMapper.defaultNotifications.mapValues { Optional($0) },
         encoder: Encoder(),
         joystick: Joystick(),
@@ -294,6 +312,7 @@ public struct Preferences: Equatable, Sendable {
         deviceNames: [String: String] = [:],
         harnessesSeen: [String] = [],
         events: [String: Bool],
+        surfaces: [String: Bool] = [:],
         notifications: [String: SessionState?],
         encoder: Encoder,
         joystick: Joystick,
@@ -315,6 +334,7 @@ public struct Preferences: Equatable, Sendable {
         self.deviceNames = deviceNames
         self.harnessesSeen = harnessesSeen
         self.events = events
+        self.surfaces = surfaces
         self.notifications = notifications
         self.encoder = encoder
         self.joystick = joystick
@@ -350,6 +370,20 @@ public struct Preferences: Equatable, Sendable {
     }
 
     public var staleInterval: TimeInterval { TimeInterval(staleHours) * 3600 }
+
+    /**
+     Whether a session hosted by this app may hold a key.
+
+     Absent means yes — see `surfaces`. `.unknown` is always yes and is deliberately not
+     offered in the UI: a session whose host could not be identified is still a real
+     session someone is sitting in front of, and a switch that silently covered
+     "everything I could not name" would be the opposite of the fail-closed rule it
+     looks like.
+     */
+    public func listens(to host: ProcessAncestry.Host) -> Bool {
+        guard host != .unknown else { return true }
+        return surfaces[host.rawValue] ?? true
+    }
 }
 
 // MARK: - JSON, in the Node document's shape
@@ -423,6 +457,11 @@ extension Preferences {
         }
         if let events = json["events"] as? [String: Bool] {
             result.events.merge(events) { _, new in new }
+        }
+        // Merged, not replaced: see `surfaces` — an older document naming fewer hosts
+        // must not switch off the ones it never knew about.
+        if let surfaces = json["surfaces"] as? [String: Bool] {
+            result.surfaces.merge(surfaces) { _, new in new }
         }
 
         if let notifications = json["notifications"] as? [String: Any] {
@@ -586,6 +625,7 @@ extension Preferences {
             "deviceNames": deviceNames,
             "harnessesSeen": harnessesSeen,
             "events": events,
+            "surfaces": surfaces,
             "notifications": notifications,
             "encoder": [
                 "cw": encoder.cw,

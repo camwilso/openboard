@@ -50,6 +50,65 @@ enum Actions {
         """)
     }
 
+    /**
+     A new tab in cmux — a surface in the workspace you are in.
+
+     Not ⌘T through System Events, which is how the Terminal version works. That keystroke
+     would go to whichever app is frontmost, so the key would open a cmux tab only when
+     cmux already happened to be in front and would type ⌘T into something else otherwise.
+     cmux's socket takes the request directly, and needs no Accessibility grant to do it.
+
+     **The workspace is named explicitly**, from `cmux identify`. A request that does not
+     name one is resolved against the *first* workspace, so without this the key would
+     quietly open its tab in whichever workspace happens to be first — not the one you
+     are looking at. Same trap as `Cmux.focus`, and the same fix.
+
+     Focus is requested, because a new tab you have to go and find is not what the key is
+     for; cmux is then brought forward, which is one `activate()` rather than anything
+     asked of cmux.
+     */
+    static func newCmuxTab() -> Result {
+        cmux(Cmux.newTabArguments)
+    }
+
+    /**
+     A new cmux workspace — what cmux's own shortcut list calls `newTab` (⌘N).
+
+     The sibling of `newCmuxTab`, and the reason there are two: a tab inside the current
+     pane and a whole new workspace are both defensible readings of "new tab", cmux
+     offers both, and which one someone wants is a fact about their habits rather than
+     something to infer. The window is named so a second cmux window does not send the
+     new workspace to the first one.
+     */
+    static func newCmuxWorkspace() -> Result {
+        cmux(Cmux.newWorkspaceArguments)
+    }
+
+    /**
+     Run one cmux command against the surface you are looking at, then raise cmux.
+
+     Shared by both new-tab actions so the preconditions are stated once: cmux running,
+     its CLI locatable, and the answer read from the CLI rather than assumed. A refusal
+     names which of those failed — "cmux is not running" and "cmux answered no" send
+     someone to completely different places.
+     */
+    private static func cmux(
+        _ arguments: (Cmux.Focused?) -> [String]
+    ) -> Result {
+        guard let app = NSRunningApplication
+            .runningApplications(withBundleIdentifier: Cmux.bundleID).first
+        else { return .failed("cmux is not running") }
+        guard let cli = Focus.cmuxCLI else {
+            return .failed("cmux is running but its CLI is not in the bundle")
+        }
+        let answer = Cmux.perform(arguments(Cmux.focused(cli: cli)), cli: cli)
+        guard answer.hasPrefix("OK") else {
+            return .failed(answer.isEmpty ? "cmux did not answer" : answer)
+        }
+        app.activate()
+        return Result(ok: true, detail: answer)
+    }
+
     /// macOS virtual key codes.
     private static let keySpace = 49
     private static let keyReturn = 36
@@ -294,6 +353,19 @@ enum Actions {
     ///
     /// Bounded: a raise that never lands must not hang the key press.
     private static func confirmFrontmost(_ target: SlotView, timeout: TimeInterval = 1.5) -> Bool {
+        /*
+         Resolve the cmux surface once, before the loop.
+
+         `hasLanded` runs up to nineteen times inside the timeout, and resolving a
+         session's surface from its pid reads cmux's entire process tree. Asking per
+         poll would spend that nineteen times to answer a question whose answer cannot
+         change — the surface id of a live surface is fixed.
+        */
+        var target = target
+        if target.origin == .cmux, target.cmuxSurface == nil, let cli = Focus.cmuxCLI {
+            target.cmuxSurface = Focus.cmuxSurface(for: target, cli: cli)
+        }
+
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             if hasLanded(target) { return true }
@@ -315,6 +387,12 @@ enum Actions {
        already running: guarded the same way `Focus.focusTerminal`/`focusITerm2` are,
        so polling this during `confirmFrontmost`'s retry loop cannot launch an app the
        session was never hosted in.
+     - **cmux** requires two things: that cmux is the frontmost *application*, which is
+       what decides where the keystroke goes, and that the surface cmux has focused
+       within itself is this session's. Exact, and the only branch that needs no
+       Automation grant to answer. A session whose surface cannot be resolved answers
+       *no* rather than assuming — same rule as the integrated-terminal case below, for
+       the same reason.
      - **VS Code, extension-hosted** compares the focused window's title against the
        session's name. The extension names its tab after the session, so a revealed chat
        puts its name in the window title — see `VSCodeWindows`.
@@ -324,6 +402,30 @@ enum Actions {
        reason the check exists.
      */
     private static func hasLanded(_ target: SlotView) -> Bool {
+        if target.origin == .cmux {
+            /*
+             Two conditions, and the first one is the one that matters.
+
+             `cmux identify` reports which surface cmux has focused *within itself*,
+             which it does whether or not cmux is the application in front of you. On
+             its own that is not evidence the keystroke will arrive: the ⏎ goes to
+             whatever macOS says is frontmost, so a session correctly focused inside a
+             cmux window sitting behind your browser would report "landed" and fire ⏎
+             into the browser.
+
+             That is the precise misdelivery this whole check exists to prevent, and it
+             is why the Terminal branch asks `frontmost of window w` rather than just
+             comparing ttys, and why the VS Code branch asks `isFrontmost`. Asked of
+             `NSWorkspace` rather than of cmux — in-process, no subprocess, and it is the
+             same authority that decides where synthetic input lands.
+            */
+            guard NSWorkspace.shared.frontmostApplication?.bundleIdentifier == Cmux.bundleID,
+                  let cli = Focus.cmuxCLI,
+                  let surface = Focus.cmuxSurface(for: target, cli: cli)
+            else { return false }
+            return Cmux.focusedSurfaceID(cli: cli) == surface.id
+        }
+
         if target.origin == .vscode {
             guard target.entrypoint == "claude-vscode",
                   target.isNamed, let name = target.title,
@@ -336,7 +438,10 @@ enum Actions {
         guard let tty = target.surface else { return false }
         let wanted = tty.hasPrefix("/dev/") ? tty : "/dev/\(tty)"
 
-        if Focus.isRunning(bundleID: "com.apple.Terminal") {
+        // Skipped for a session known to be in iTerm2, for the reason `Focus.raise`
+        // gives: this is polled, so it would be up to nineteen Apple events to an app
+        // the session is not in.
+        if target.origin != .iterm2, Focus.isRunning(bundleID: "com.apple.Terminal") {
             let result = run("""
             tell application "Terminal"
               repeat with w from 1 to count of windows

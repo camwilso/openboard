@@ -85,6 +85,38 @@ public enum Discovery {
     private static let chatFlags = ["--output-format", "stream-json", "--input-format"]
 
     /**
+     What cmux writes into every session it launches, and nothing else does.
+
+     cmux does not run a bare `claude`. It passes `--session-id` and a whole `--settings`
+     document that installs its own hooks, so the command line looks like this:
+
+     ```
+     /Users/x/.local/bin/claude --session-id 9f3… --settings {"hooks":{"Stop":[{…
+       "command":"\"${CMUX_CLAUDE_HOOK_CMUX_BIN:-cmux}\" hooks claude stop"…
+     ```
+
+     Which the bare-CLI rule below refuses — correctly, by its own reasoning ("anything
+     with flags on a tty is being driven by something else"), and wrongly in fact: a
+     cmux tab is a human sitting in front of a terminal. The visible cost was that no
+     cmux session was ever *discovered*. They appeared only once they emitted a hook, so
+     every app restart filled the board with whatever older sessions `ps` happened to
+     list first and left the ones actually being used off it.
+
+     `CMUX_CLAUDE_HOOK_CMUX_BIN` is the discriminator, for the same reason the
+     extension's *path* is the discriminator above: it is written by cmux, it names
+     cmux's own binary, and no script or wrapper would have a reason to contain it. A
+     general "any `claude` with `--session-id`" rule was deliberately not written — that
+     would re-admit exactly the class this allowlist exists to keep out, and a new
+     launcher can be added the day one is observed rather than guessed at.
+     */
+    private static let cmuxSignature = "CMUX_CLAUDE_HOOK_CMUX_BIN"
+
+    /// Flags that mean a run is not a conversation someone is sitting in front of.
+    /// Checked even for a recognised launcher: `claude -p` under cmux is a script in a
+    /// tab, and a key for it would be a key nobody is going to press.
+    private static let nonInteractiveFlags = [" -p ", " --print"]
+
+    /**
      `ps` output to candidates. Pure, so the two signatures can be tested against real
      command lines rather than against whatever happens to be running on this Mac.
 
@@ -102,9 +134,18 @@ public enum Discovery {
             let executable = String(parts[2])
 
             if tty != "??", !tty.isEmpty {
-                // The bare CLI. Anything with flags on a tty is being driven by
+                // The bare CLI. Anything else with flags on a tty is being driven by
                 // something else — a script, a wrapper, another tool's subprocess.
-                guard command == "claude" || command.hasSuffix("/claude") else { continue }
+                if command == "claude" || command.hasSuffix("/claude") {
+                    found.append((pid, "/dev/\(tty)", "cli"))
+                    continue
+                }
+                // …with one named exception: a launcher whose flags are its own, not a
+                // script's. See `cmuxSignature`.
+                let isClaude = executable == "claude" || executable.hasSuffix("/claude")
+                guard isClaude, command.contains(cmuxSignature),
+                      !nonInteractiveFlags.contains(where: { command.contains($0) })
+                else { continue }
                 found.append((pid, "/dev/\(tty)", "cli"))
                 continue
             }
@@ -152,12 +193,18 @@ extension SessionRegistry {
      session emits a hook — see `adoptRealSessionID`.
 
      Idempotent: a host already on the board keeps its slot rather than taking another.
+
+     - Parameter isListening: whether a surface may hold a key at all. Applied where the
+       host is already being resolved, so muting a surface costs no extra `ps` walk — and
+       applied *before* the claim, so a muted session never takes a key it would
+       immediately have to give back.
      */
     @discardableResult
     public mutating func reconnect(
         _ sessions: [Discovery.Found],
         now: Date = Date(),
-        isAlive: (Int?) -> Bool = SessionRegistry.processIsAlive
+        isAlive: (Int?) -> Bool = SessionRegistry.processIsAlive,
+        isListening: (ProcessAncestry.Host) -> Bool = { _ in true }
     ) -> Int {
         // Entries restored from disk, or claimed before this field existed, arrive with
         // no host — and a session that emits no hooks is never enriched, so nothing
@@ -178,7 +225,12 @@ extension SessionRegistry {
             }
             guard !known else { continue }
 
-            var result = claim(
+            // Asked once per candidate, and the answer is reused for the entry below
+            // rather than resolved twice.
+            let host = ProcessAncestry.host(ofPID: session.pid)
+            guard isListening(host) else { continue }
+
+            let result = claim(
                 sessionID: session.placeholderSessionID,
                 cwd: session.cwd,
                 pid: session.pid,
@@ -190,10 +242,10 @@ extension SessionRegistry {
             )
             if let entry = result.entry {
                 added += 1
-                // Asked once, here, rather than per repaint: `ps` is not free and the
-                // owning app cannot change while the process lives.
+                // Stored rather than re-resolved: `ps` is not free and the owning app
+                // cannot change while the process lives.
                 if let index = entries.firstIndex(where: { $0.sessionID == entry.sessionID }) {
-                    entries[index].host = ProcessAncestry.host(ofPID: session.pid)
+                    entries[index].host = host
                 }
             }
         }

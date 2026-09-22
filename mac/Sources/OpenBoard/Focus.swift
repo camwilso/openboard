@@ -5,13 +5,19 @@ import OpenBoardKit
 /**
  Raise the window hosting a session.
 
- Ported from `lib/focus.cjs`, including the mistake it made. Two strategies, chosen by
+ Ported from `lib/focus.cjs`, including the mistake it made. Three strategies, chosen by
  how the session runs:
 
  - **Terminal or iTerm2: exact.** Both apps' AppleScript dictionaries expose `tty` —
    Terminal per tab, iTerm2 per session — and a CLI session's process owns a tty, so
-   the precise tab (or session) can be selected. A tty is tried against Terminal
-   first, then iTerm2, since an exact-match miss cannot mis-raise anything.
+   the precise tab (or session) can be selected. A session known to be in iTerm2 goes
+   straight there; one whose host could not be resolved tries Terminal first and then
+   iTerm2, since an exact-match miss cannot mis-raise anything.
+ - **cmux: exact, and not by tty.** cmux has no AppleScript and its surfaces expose no
+   tty, so the tty branch cannot reach one — it would select nothing and, before
+   `origin` knew about cmux, fell through to opening the folder in an editor. Its own
+   socket addresses a surface by id instead, which is exact and needs no Automation
+   grant. See `Cmux`.
  - **VS Code: approximate.** An extension-hosted session has no tty, so the window for
    the workspace folder is raised. That focuses the right window, not the specific
    Claude panel inside it — an honest limit rather than a bug to chase.
@@ -52,8 +58,27 @@ enum Focus {
             return activateVSCode()
         }
 
+        // Before the tty branch, not after it: a cmux session *has* a tty, so falling
+        // through would run the Terminal walk, match nothing, and then try iTerm2 —
+        // two Apple events and two possible permission prompts to reach a wrong answer.
+        if slot.origin == .cmux {
+            return focusCmux(slot)
+        }
+
         if let tty = slot.surface, tty.hasPrefix("ttys") || tty.hasPrefix("/dev/") {
             let path = tty.hasPrefix("/dev/") ? tty : "/dev/\(tty)"
+
+            /*
+             Known to be iTerm2: ask iTerm2, and nothing else.
+
+             The fallthrough below exists because a tty alone cannot say which of the two
+             owns it. Now that the host can, trying Terminal first is not a harmless
+             extra step — for someone who only uses iTerm2 it is an Apple event to an app
+             the session is not in, and therefore a consent prompt for Terminal they have
+             no reason to grant.
+            */
+            if slot.origin == .iterm2 { return focusITerm2(tty: path) }
+
             switch focusTerminal(tty: path) {
             case .notFound:
                 // The tty is exact-match-or-nothing, so a miss here cannot mis-raise
@@ -198,6 +223,61 @@ enum Focus {
         case let .failure(message):
             return .failed(message)
         }
+    }
+
+    /**
+     Select the cmux surface holding this session, and bring cmux forward.
+
+     Two calls, and neither is an Apple event: cmux's socket selects the surface and
+     the workspace around it, then `NSRunningApplication` raises the app. So this is the
+     one exact jump that works with no permission granted at all — the tty walk needs
+     Automation for Terminal, and separately for iTerm2, before it can do anything.
+
+     The outcomes are the same contract as the tty path, and each says something
+     different: `.notFound` for cmux not running or a surface that has since closed,
+     `.noWindow` for a session cmux does not place in one — a `claude` under `ssh`
+     inside a cmux terminal is real and is not reachable this way — and `.failed` only
+     for a cmux whose CLI cannot be located, which is the one case a user can act on.
+     */
+    private static func focusCmux(_ slot: SlotView) -> Outcome {
+        // Never launch cmux to look for a session that cannot be in it, the same
+        // reasoning as `focusTerminal` and `focusITerm2`.
+        guard let app = NSRunningApplication
+            .runningApplications(withBundleIdentifier: Cmux.bundleID).first
+        else { return .notFound }
+        guard let cli = cmuxCLI else {
+            return .failed("cmux is running but its CLI is not in the bundle")
+        }
+        guard let surface = cmuxSurface(for: slot, cli: cli) else { return .noWindow }
+        guard Cmux.focus(surface, cli: cli) else { return .notFound }
+        // Raised last, so the window that comes forward is already showing the right
+        // surface rather than switching workspaces in front of you.
+        app.activate()
+        return .raised(method: "cmux-surface")
+    }
+
+    /// The `cmux` binary belonging to the copy of cmux that is actually running.
+    static var cmuxCLI: String? {
+        Cmux.cliPath(
+            inBundle: NSRunningApplication
+                .runningApplications(withBundleIdentifier: Cmux.bundleID)
+                .first?.bundleURL?.path
+        )
+    }
+
+    /**
+     Which cmux surface a session is in.
+
+     The cached id first — it is read once per presence cycle for every session at once,
+     and a surface id does not change while the surface exists. A session claimed since
+     that read has none yet, and asking cmux by pid costs one call rather than costing
+     the press: a jump that does nothing for the first few seconds of a session's life
+     is exactly the kind of intermittent nothing this app is built to avoid.
+     */
+    static func cmuxSurface(for slot: SlotView, cli: String) -> Cmux.Surface? {
+        if let cached = slot.cmuxSurface { return cached }
+        guard let pid = slot.pid else { return nil }
+        return Cmux.surfaces(cli: cli)[pid]
     }
 
     /// Whether an app with this bundle ID is already running, without launching it.

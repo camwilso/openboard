@@ -250,14 +250,18 @@ public enum WindowTitle {
 /**
  Where a session is running.
 
- The two surfaces behave differently in ways that matter when you are looking at the
- list: a Terminal session can be jumped to exactly, by tty, and a VS Code one can only
- be approximated by folder. Showing which is which sets the right expectation for what
- pressing its key will do.
+ The surfaces behave differently in ways that matter when you are looking at the list:
+ a Terminal or cmux session can be jumped to exactly — by tty and by surface id
+ respectively — and a VS Code one can only be approximated by folder. Showing which is
+ which sets the right expectation for what pressing its key will do.
  */
 public enum SessionOrigin: String, Sendable, Equatable {
     case terminal = "Terminal"
+    case iterm2 = "iTerm2"
     case vscode = "VS Code"
+    /// Lower-cased because that is how cmux writes its own name, and a badge that
+    /// renames someone's app is a small wrongness the reader has to look past.
+    case cmux = "cmux"
     case cli = "CLI"
 
     /// Decided from the entrypoint, then from which application actually owns the
@@ -276,6 +280,12 @@ public enum SessionOrigin: String, Sendable, Equatable {
         switch host {
         case .vscode: return .vscode
         case .terminal: return .terminal
+        case .iterm2: return .iterm2
+        // A cmux session has a real tty like a Terminal tab, so without this it lands
+        // on the Terminal jump — which selects a tab *by tty* and finds none, because
+        // Terminal does not own that pty. The same failure VS Code's integrated
+        // terminal used to have, and the reason `host` exists at all.
+        case .cmux: return .cmux
         case .unknown: return tty != nil ? .terminal : .cli
         }
     }

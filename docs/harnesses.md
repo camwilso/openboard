@@ -8,13 +8,30 @@ can never turn a key green is not a harness with a small gap, it is a different 
 
 ## Claude Code — what this was built for
 
-Fully wired, and the only one tested at length. Both surfaces:
+Fully wired, and the only one tested at length. Every surface:
 
 | | |
 |---|---|
 | **Terminal** | every state, and pressing a key finds the exact tab by its `tty` |
+| **iTerm2** | every state, and a key finds the exact split — `tty` lives on the session there, one level deeper than Terminal's tabs |
+| **cmux** | every state, and a key selects the exact tab or split by surface id, switching workspace if the session is in another one. Needs no Automation grant |
 | **VS Code, extension-hosted** | every state, and a key reveals the panel already holding that conversation |
 | **VS Code, integrated terminal** | every state; a key raises VS Code but cannot select a specific terminal — no API exposes that from outside |
+
+Each of those four apps has a switch in **Settings → Agents → Where it works**. Turning
+one off means sessions there get no key — and any key one of them is already holding is
+given up immediately, because six keys is a scarce budget and a surface you have stopped
+caring about should not be spending it. Switched on is the default, including for a
+surface added by a later version.
+
+The rows below the switches — subagents, embedded SDK clients, anything remote — have
+none. They are never given a key by design, so there is nothing to turn off.
+
+A "new tab" key is per-app too: **new Terminal tab** sends ⌘T to Terminal, and the two
+cmux actions ask cmux directly — **new cmux tab** for a tab in the workspace you are in,
+**new cmux workspace** for what cmux's own shortcut list calls a new tab. Bind whichever
+matches the terminal you actually work in; a key bound to the Terminal one opens a
+Terminal window behind cmux, which is the wrong app doing the right thing.
 
 Hooks install automatically. Setup edits `~/.claude/settings.json`, preserving every
 unrelated setting and any other tool's hooks on the same events, and backs the file up

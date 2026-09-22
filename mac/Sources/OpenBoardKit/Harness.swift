@@ -83,19 +83,31 @@ public struct Harness: Sendable, Identifiable, Equatable {
         /// Nil when the surface is supported. Present when it is not, and then it is
         /// the reason rather than a shrug.
         public let unsupported: String?
+        /**
+         The owning app this surface corresponds to, when there is one.
+
+         What makes a surface *switchable*: the board decides whether to listen by
+         resolving a session's host (`ProcessAncestry`), so a row can only offer a toggle
+         if it names a host to match against. Nil for the rows that describe a rule
+         rather than an app — subagents, embedded SDK clients, anything remote — which
+         are never given a key by design and so have nothing to turn off.
+         */
+        public let host: ProcessAncestry.Host?
 
         public init(
             id: String,
             name: String,
             detection: String,
             jump: String,
-            unsupported: String? = nil
+            unsupported: String? = nil,
+            host: ProcessAncestry.Host? = nil
         ) {
             self.id = id
             self.name = name
             self.detection = detection
             self.jump = jump
             self.unsupported = unsupported
+            self.host = host
         }
     }
 
@@ -146,8 +158,29 @@ extension Harness {
             Surface(
                 id: "terminal",
                 name: "Terminal",
-                detection: "The session's tty, captured from its process at claim time.",
-                jump: "Matched against Terminal's per-tab tty — the exact tab, not the window."
+                detection: "The owning process, and the session's tty captured from it "
+                    + "at claim time.",
+                jump: "Matched against Terminal's per-tab tty — the exact tab, not the window.",
+                host: .terminal
+            ),
+            Surface(
+                id: "iterm2",
+                name: "iTerm2",
+                detection: "The owning process. A tty alone cannot tell iTerm2 from "
+                    + "Terminal — both allocate a real one.",
+                jump: "Matched against iTerm2's per-session tty, one level deeper than "
+                    + "Terminal: the exact split, not just the tab.",
+                host: .iterm2
+            ),
+            Surface(
+                id: "cmux",
+                name: "cmux",
+                detection: "The owning process. cmux then names the surface the "
+                    + "session's pid is running in.",
+                jump: "The surface, by id, over cmux's own socket — the exact tab or "
+                    + "split, switching workspace if it is in another one. No "
+                    + "Automation grant needed.",
+                host: .cmux
             ),
             Surface(
                 id: "vscode",
@@ -155,7 +188,8 @@ extension Harness {
                 detection: "Entry point `claude-vscode`, or the owning process when a "
                     + "session runs in the integrated terminal.",
                 jump: "`code -r` on the workspace folder: the right window, not the "
-                    + "specific panel."
+                    + "specific panel.",
+                host: .vscode
             ),
             Surface(
                 id: "subagent",

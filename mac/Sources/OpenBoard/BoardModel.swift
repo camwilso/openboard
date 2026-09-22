@@ -51,6 +51,9 @@ final class BoardModel: ObservableObject {
 
     /// Which hooks may repaint. Absent means enabled — muting is opt-in.
     @Published var events: [String: Bool] = [:]
+    /// Which surfaces the board listens to, by host raw value. Absent means listening,
+    /// the same rule as `events` — see `Preferences.surfaces`.
+    @Published var surfaces: [String: Bool] = [:]
     /// Notification subtype → state. `idle_prompt` is deliberately absent.
     @Published var notifications: [String: SessionState] = [:]
     /// The show currently owning the ring, if any.
@@ -85,6 +88,7 @@ final class BoardModel: ObservableObject {
         caps = settings.caps
         snippets = settings.snippets
         events = settings.events
+        surfaces = settings.surfaces
         notifications = settings.notificationStates
     }
 
@@ -103,6 +107,7 @@ final class BoardModel: ObservableObject {
         next.caps = caps
         next.snippets = snippets
         next.events = events
+        next.surfaces = surfaces
         var mapped: [String: SessionState?] = [:]
         for kind in ["permission_prompt", "agent_needs_input", "elicitation_dialog", "idle_prompt"] {
             mapped[kind] = notifications[kind]
@@ -148,8 +153,16 @@ struct SlotView: Identifiable, Equatable {
     var age: String?
     var sessionID: String?
     var pendingTool: String?
-    /// Terminal, VS Code, or a CLI with no tty.
+    /// Terminal, cmux, VS Code, or a CLI with no tty.
     var origin: SessionOrigin?
+    /// The session's process, for the one host that is addressed by pid: cmux knows
+    /// which surface a pid is running in, so this is what resolves a jump when the
+    /// cached `cmuxSurface` is not there yet.
+    var pid: Int?
+    /// The cmux surface holding this session, with the workspace and window a focus
+    /// request has to name. Nil for every other host, and for a cmux session claimed
+    /// since the last read.
+    var cmuxSurface: Cmux.Surface?
     /// The raw entry point, kept alongside `origin` because the two answer different
     /// questions. `origin` is `.vscode` for both an extension-hosted chat and a session
     /// in VS Code's integrated terminal; only the first has a panel that can be revealed

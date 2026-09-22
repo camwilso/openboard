@@ -88,8 +88,10 @@ its current state. Anything blocked is called out at the top.
 
 ## Pressing a key goes there
 
-Press an Agent key and OpenBoard brings that chat to the front. In Terminal it finds the
-exact tab; in VS Code it reveals the panel already holding that conversation.
+Press an Agent key and OpenBoard brings that chat to the front. In Terminal and iTerm2 it
+finds the exact tab; in cmux it selects the exact surface, switching workspace if the
+session is in another one; in VS Code it reveals the panel already holding that
+conversation.
 
 Nothing is ever *opened* by a jump. The extension reveals a panel it already has, and the
 integrated-terminal case raises the app rather than opening a folder — an approximate jump
@@ -105,13 +107,16 @@ execute and only a local process can reach the hardware.
 
 | | |
 |---|---|
-| Terminal | yes |
+| Terminal, iTerm2 | yes |
+| cmux | yes — any tab or split, in any workspace |
 | VS Code, integrated terminal | yes |
 | VS Code, extension-hosted | yes |
 | Subagents | no — six keys is a scarce budget |
 | claude.ai/code, cloud, SSH | unreachable |
 
-An unrecognised surface gets no key rather than quietly taking one.
+Any of those four apps can be switched off on its own in **Settings → Agents → Where it
+works**, and a surface you switch off gives up the keys it is holding straight away. An
+unrecognised surface gets no key rather than quietly taking one.
 
 ---
 
