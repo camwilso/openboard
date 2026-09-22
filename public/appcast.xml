@@ -6,6 +6,18 @@
     <description>Updates to OpenBoard.</description>
     <language>en</language>
     <item>
+      <title>0.3.0</title>
+      <pubDate>Tue, 22 Sep 2026 00:42:53 -0400</pubDate>
+      <sparkle:version>78</sparkle:version>
+      <sparkle:shortVersionString>0.3.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <sparkle:releaseNotesLink>https://github.com/camwilso/openboard/releases/tag/v0.3.0</sparkle:releaseNotesLink>
+      <enclosure
+        url="https://github.com/camwilso/openboard/releases/download/v0.3.0/OpenBoard-0.3.0.zip"
+        type="application/octet-stream"
+        sparkle:edSignature="ncIPgsJmOuPDGnh00BPToX5sCc1oi4kt0WL2/yRaKsDz1Ky3EW9dX6wy+cTfujrgAsUaP7PRvYWKEYfpfbMXCw==" length="4181671" />
+    </item>
+    <item>
       <title>0.2.0</title>
       <pubDate>Fri, 14 Aug 2026 08:42:07 -0400</pubDate>
       <sparkle:version>59</sparkle:version>
