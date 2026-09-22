@@ -554,7 +554,15 @@ private struct ColorEditor: View {
                 spacing: 8
             ) {
                 ForEach(Self.presets, id: \.name) { preset in
-                    Button { update { $0.color = preset.rgb } } label: {
+                    // The draft is synced by hand, and it is load-bearing: clicking a
+                    // preset also blurs the hex field, and blur commits the draft.
+                    // Left stale, that commit writes the *old* color straight back
+                    // over the preset just picked — the click appears to not take,
+                    // in either blur-then-click order.
+                    Button {
+                        update { $0.color = preset.rgb }
+                        hexDraft = preset.rgb.hex
+                    } label: {
                         RoundedRectangle(cornerRadius: 5)
                             .fill(Color(preset.rgb))
                             .frame(width: 24, height: 24)
@@ -572,15 +580,29 @@ private struct ColorEditor: View {
                 }
             }
 
-            TextField("hex", text: $hexDraft)
-                .textFieldStyle(.roundedBorder)
-                .font(.system(size: 11.5).monospaced())
-                .frame(width: 96)
-                .focused($hexFocused)
-                .onSubmit(commitHex)
-                // Committed on blur too, so a typed value is not silently lost by
-                // clicking away.
-                .onChange(of: hexFocused) { _, focused in if !focused { commitHex() } }
+            HStack(spacing: 8) {
+                TextField("hex", text: $hexDraft)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 11.5).monospaced())
+                    .frame(width: 96)
+                    .focused($hexFocused)
+                    .onSubmit(commitHex)
+                    // Committed on blur too, so a typed value is not silently lost by
+                    // clicking away.
+                    .onChange(of: hexFocused) { _, focused in if !focused { commitHex() } }
+
+                // What the typed value looks like, before committing it. Falls back
+                // to the current color while the draft is not yet a parseable hex,
+                // so a half-typed value reads as "no change yet" rather than black.
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(Color(RGB(hex: hexDraft) ?? appearance.color))
+                    .frame(width: 24, height: 24)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 5)
+                            .strokeBorder(.black.opacity(0.25), lineWidth: 0.5)
+                    )
+                    .help("Preview of the hex value")
+            }
 
             if appearance.effect.isAnimated {
                 HStack(spacing: 8) {
@@ -605,6 +627,10 @@ private struct ColorEditor: View {
             hexDraft = appearance.color.hex
             return
         }
+        // A draft that matches the current color is not an edit — it is the seed, or
+        // a preset click that already synced it. Writing it anyway is how a blur
+        // used to overwrite a preset pick with the value the field was seeded with.
+        guard parsed != appearance.color else { return }
         update { $0.color = parsed }
         hexDraft = parsed.hex
     }
