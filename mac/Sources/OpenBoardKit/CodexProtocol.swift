@@ -27,8 +27,53 @@ import Foundation
  */
 public enum CodexProtocol {
     public static let vendorID = 0x303A   // Espressif
+
+    /// The Codex Micro. Kept as the canonical id: it is the board this RPC was
+    /// reverse-engineered against, and the one whose firmware implements all of it.
     public static let productID = 0x8360
+
+    /**
+     Every board known to carry the `v.oai.*` vendor collection.
+
+     The Codex Micro is built on the Creator Micro 2 chassis and the two ship the
+     same vendor interface, so matching on `productID` alone left Creator Micro 2
+     owners with an app that reported "not connected" against a pad that was plugged
+     in, enumerated, and exposing usage page `0xFF00`.
+
+     Presence here means "speaks the vendor channel", not "implements every method".
+     Detection and capability are separate questions, and conflating them is what
+     made the failure look like a connection problem.
+     */
+    public static let productIDs = [
+        0x8360,  // Codex Micro
+        0x8298,  // Creator Micro 2
+    ]
+
     public static let usagePage = 0xFF00  // vendor-defined
+
+    /**
+     Product names, as they appear in the HID registry and the paired-device list.
+
+     A suffix is appended once a board has been paired more than once — "Codex
+     Micro #1", "Creator Micro 2 #3" — so these are prefixes and fragments, never
+     whole-string comparisons.
+
+     "CodexMicro" is the unspaced form the Bluetooth stack has been seen to report;
+     it is kept alongside the spaced one rather than normalising whitespace away,
+     because which form appears is a property of the host, not of the pad.
+     */
+    public static let productNames = [
+        "Creator Micro 2",
+        "Codex Micro",
+        "CodexMicro",
+    ]
+
+    /// Does a HID or Bluetooth product name belong to a board we drive?
+    public static func isKnownProductName(_ name: String) -> Bool {
+        let folded = name.lowercased()
+        return productNames.contains { folded.hasPrefix($0.lowercased()) }
+    }
+
     public static let reportID: UInt8 = 0x06
     public static let rpcChannel: UInt8 = 0x02
     public static let reportSize = 64

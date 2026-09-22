@@ -238,10 +238,29 @@ func runProtocolTests() {
     test("the device identity matches the hardware") {
         expectEqual(CodexProtocol.vendorID, 0x303A)
         expectEqual(CodexProtocol.productID, 0x8360)
+        // The Codex Micro and the Creator Micro 2 it is built on both carry the
+        // vendor collection; matching only the former reported a connected Creator
+        // Micro 2 as "not connected".
+        expectEqual(CodexProtocol.productIDs, [0x8360, 0x8298])
+        expect(CodexProtocol.productIDs.contains(CodexProtocol.productID))
         // Matching on vendor+product alone finds four interfaces; only the
         // vendor-defined one speaks the RPC, and writing to the others silently
         // does nothing.
         expectEqual(CodexProtocol.usagePage, 0xFF00)
+    }
+
+    test("product names match the suffixed forms macOS reports") {
+        expect(CodexProtocol.isKnownProductName("Codex Micro"))
+        expect(CodexProtocol.isKnownProductName("Creator Micro 2"))
+        // Re-pairing leaves a numbered registration behind, and that is the name
+        // the paired-device list carries from then on.
+        expect(CodexProtocol.isKnownProductName("Creator Micro 2 #3"))
+        expect(CodexProtocol.isKnownProductName("Codex Micro #1"))
+        // Case is the host's choice, not the pad's.
+        expect(CodexProtocol.isKnownProductName("creator micro 2"))
+        expect(!CodexProtocol.isKnownProductName("Creator Board"))
+        expect(!CodexProtocol.isKnownProductName("Apple Internal Keyboard / Trackpad"))
+        expect(!CodexProtocol.isKnownProductName(""))
     }
 }
 

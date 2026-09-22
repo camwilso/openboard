@@ -28,7 +28,9 @@ public enum DeviceDiagnostics {
     }
 
     /// The pad's Bluetooth name, as it appears in the paired-device list.
-    public static let deviceNames = ["Codex Micro", "CodexMicro"]
+    /// Shared with the HID layer so a newly supported board cannot be detected on
+    /// one bus and invisible on the other.
+    public static let deviceNames = CodexProtocol.productNames
 
     /**
      Ask the system about pairing, when the device is not on the HID bus.
@@ -75,7 +77,7 @@ public enum DeviceDiagnostics {
 
             // The name carries a suffix when more than one has been paired —
             // "Codex Micro #3" on this machine.
-            if deviceNames.contains(where: { trimmed.hasPrefix($0) }), trimmed.hasSuffix(":") {
+            if trimmed.hasSuffix(":"), CodexProtocol.isKnownProductName(trimmed) {
                 // Listed with no section header above it still means paired.
                 return section ?? .pairedButAsleep
             }
