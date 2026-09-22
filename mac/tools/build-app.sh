@@ -337,6 +337,21 @@ fi
 ENTITLEMENTS="$ROOT/OpenBoard.entitlements"
 [ -f "$ENTITLEMENTS" ] || { printf 'missing %s\n' "$ENTITLEMENTS" >&2; exit 1; }
 
+# The hardened runtime also enforces library validation, which requires embedded
+# frameworks to carry the *same Team ID* as the app. A self-signed identity has no
+# Team ID at all, so Sparkle.framework fails validation — even though both are signed
+# by the identical certificate — and dyld kills the app at launch with "different
+# Team IDs", before the first log line. A Developer ID signature has a real Team ID
+# and never hits this, which is why only the local rung needs the exception.
+if [ "$IDENTITY_KIND" != "developer-id" ]; then
+  LOCAL_ENTITLEMENTS="$ROOT/.build/OpenBoard-local.entitlements"
+  cp "$ENTITLEMENTS" "$LOCAL_ENTITLEMENTS"
+  /usr/libexec/PlistBuddy \
+    -c "Add :com.apple.security.cs.disable-library-validation bool true" \
+    "$LOCAL_ENTITLEMENTS"
+  ENTITLEMENTS="$LOCAL_ENTITLEMENTS"
+fi
+
 sign() {
   # $1 = path, $2 = identifier
   codesign --force --sign "$IDENTITY" --identifier "$2" \
