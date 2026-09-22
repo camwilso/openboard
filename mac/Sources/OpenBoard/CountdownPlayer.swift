@@ -18,7 +18,7 @@ import OpenBoardKit
  */
 @MainActor
 final class CountdownPlayer {
-    private let device: HIDDevice
+    private let device: PadTransport
     private let log: (String) -> Void
     /// Called when the show ends, so the caller can repaint the real board.
     private let finished: () -> Void
@@ -33,7 +33,7 @@ final class CountdownPlayer {
     private var gain: Double = 1
 
     init(
-        device: HIDDevice,
+        device: PadTransport,
         log: @escaping (String) -> Void,
         finished: @escaping () -> Void
     ) {

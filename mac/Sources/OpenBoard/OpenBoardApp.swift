@@ -191,6 +191,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var mainWindow: MainWindowController?
     /// Guided setup. Also kept, so closing and reopening does not lose the position.
     private(set) var setupWindow: SetupWindowController?
+    /// The simulated pad's face, when launched with `OPENBOARD_VIRTUAL_PAD=1`.
+    private(set) var virtualPadWindow: VirtualPadWindowController?
 
     /**
      Everything the UI can ask for, in one place.
@@ -264,10 +266,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // first window on screen with an empty menu bar for a frame.
         AppMenu.install(target: self, openSettings: #selector(showMainWindow))
 
-        let created = BoardController(model: board)
+        /*
+         `OPENBOARD_VIRTUAL_PAD=1` swaps the hardware for a simulated pad and puts its
+         face on screen. Everything above the transport is the same program: the same
+         framed bytes go out, the same JSON lines come back. For working on the app —
+         and finishing setup — without a board on the desk.
+
+         An environment variable rather than a setting because it chooses what the
+         controller is *built with*, and a toggle that only takes effect on relaunch
+         is a setting that looks broken.
+         */
+        let virtual: VirtualPad? =
+            ProcessInfo.processInfo.environment["OPENBOARD_VIRTUAL_PAD"] == "1"
+                ? VirtualPad() : nil
+
+        let created: BoardController
+        if let virtual {
+            Log.write("virtual pad: driving the simulator, not hardware")
+            created = BoardController(
+                model: board, device: virtual, surveyPad: VirtualPad.survey
+            )
+            virtualPadWindow = VirtualPadWindowController(pad: virtual)
+        } else {
+            created = BoardController(model: board)
+        }
         created.openSettings = { [weak self] in self?.showMainWindow() }
         controller = created
         created.start()
+        virtualPadWindow?.show()
         battery.start()
 
         /*

@@ -95,7 +95,7 @@ runAuditFollowUpTests()
 // inherits that isolation and can never run while the semaphore below blocks main.
 // The suite then reported success by simply skipping these tests.
 let lockDone = DispatchSemaphore(value: 0)
-Task.detached { await runLockTests(); lockDone.signal() }
+Task.detached { await runLockTests(); await runVirtualPadTests(); lockDone.signal() }
 if lockDone.wait(timeout: .now() + 90) == .timedOut {
     FileHandle.standardError.write(Data("lock tests timed out\n".utf8))
     exit(1)

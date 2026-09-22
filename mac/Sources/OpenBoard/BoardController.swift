@@ -23,7 +23,11 @@ import SwiftUI
 @MainActor
 final class BoardController: ObservableObject {
     private let model: BoardModel
-    private let device = HIDDevice()
+    private let device: PadTransport
+    /// `HIDDevice.survey()` unless a virtual pad answers instead. Injected separately
+    /// from the transport because the real one is static — it asks the bus, not a
+    /// handle — and a protocol cannot carry it.
+    private let surveyPad: @Sendable () -> HIDDevice.Survey
     private let hooks = HookServer()
 
     private var registry = SessionRegistry()
@@ -146,8 +150,14 @@ final class BoardController: ObservableObject {
     /// While present this is drift repair, and can be lazy.
     private let presentInterval: Duration = .seconds(10)
 
-    init(model: BoardModel) {
+    init(
+        model: BoardModel,
+        device: PadTransport = HIDDevice(),
+        surveyPad: @escaping @Sendable () -> HIDDevice.Survey = HIDDevice.survey
+    ) {
         self.model = model
+        self.device = device
+        self.surveyPad = surveyPad
     }
 
     /// Re-read anything the settings window can change.
@@ -1522,7 +1532,7 @@ final class BoardController: ObservableObject {
             var wasPresent: Bool?
             while !Task.isCancelled {
                 guard let self else { return }
-                let survey = HIDDevice.survey()
+                let survey = self.surveyPad()
                 let present = survey.found
                 self.model.apply(isWired: survey.isWired)
                 // Which pad, not just whether one is there: the name in the menu bar is

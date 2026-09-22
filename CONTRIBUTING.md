@@ -71,6 +71,24 @@ Two harnesses exist for the things that are otherwise invisible:
 Both are reversible. The onboarding one costs a few minutes re-granting permissions
 afterwards, which is the point.
 
+## No pad on the desk
+
+```sh
+OPENBOARD_VIRTUAL_PAD=1 OPENBOARD_HOME=/tmp/openboard-scratch swift run OpenBoard
+```
+
+runs the whole app against a simulated pad and puts its face in a floating panel: the
+same framed bytes go out, the same JSON lines come back, and what the panel shows is
+decoded from the writes rather than mirrored from app state — so a paint bug shows up
+there the way it would on the desk. Clicking its keys presses them for real, setup's
+key-order step is completable, and `OPENBOARD_HOME` keeps the run out of your real
+config (keep the path short; the hook socket lives under it and `sockaddr_un` caps
+paths at 104 bytes).
+
+It does not replace the real pad — acknowledgement timing, firmware quirks and
+Bluetooth behaviour are exactly the things it cannot show — but it removes the
+hardware from every question that was never about hardware.
+
 ## What CI does
 
 Every push and pull request builds the app, runs the suite, assembles the `.app` bundle
