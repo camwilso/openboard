@@ -8,9 +8,11 @@ import SwiftUI
  then anything blocked on you, then the six sessions, then the action keys, then the
  commands. 376pt wide and internally scrollable so a long chat title never widens it.
 
- When the pad is unusable the session list is replaced entirely rather than shown
- greyed out. Everything below the header would be describing hardware that is not
- listening, and a board you cannot trust is worse than no board.
+ When the pad is unusable a banner says so above the sessions, which stay. The list
+ used to be replaced entirely on the grounds that a board you cannot trust is worse
+ than no board — but the sessions are not the board: they come from hooks and the
+ process table, jumping to one is AppleScript or the cmux socket, and none of that
+ needs the pad. Only the lights do, and the banner owns that fact.
  */
 struct PopoverView: View {
     @EnvironmentObject private var board: BoardModel
@@ -33,37 +35,40 @@ struct PopoverView: View {
             // gone away.
             if !setup.hasSettled {
                 CheckingView()
-            } else if !setup.isReady {
+            } else if !setup.isReady, !setup.isSkipped {
                 SetupNeededView(
                     progress: setup.progress,
                     sessions: board.slots.filter(\.isLive).count,
                     startSetup: {
                         commands.dismissMenu()
                         commands.openSetup()
-                    }
+                    },
+                    skipSetup: { setup.skip() }
                 )
-            } else if board.device.isUsable {
+            } else {
                 // Deliberately *not* a ScrollView. Inside a MenuBarExtra window it is
                 // proposed no height and collapses to nothing — which is exactly how the
                 // session list came to be invisible while the commands below it rendered
                 // fine. The content is a fixed six rows plus the action keys, so it has a
                 // known height and never needs to scroll.
                 VStack(spacing: 0) {
+                    if !board.device.isUsable {
+                        DeviceDownBanner(
+                            status: board.device,
+                            name: board.deviceName,
+                            retry: { commands.sync() },
+                            startSetup: {
+                                commands.dismissMenu()
+                                commands.openSetup()
+                            }
+                        )
+                        Divider().opacity(0.6)
+                    }
                     if !board.blocked.isEmpty { blockedRow }
                     sessions
                     Divider().opacity(0.6)
                     actionKeys
                 }
-            } else {
-                DisconnectedView(
-                    status: board.device,
-                    name: board.deviceName,
-                    retry: { commands.sync() },
-                    startSetup: {
-                        commands.dismissMenu()
-                        commands.openSetup()
-                    }
-                )
             }
 
             Divider().opacity(0.6)
@@ -615,54 +620,46 @@ struct MenuRow: View {
     }
 }
 
-/// The pad is unreachable, so this replaces the board rather than dimming it.
-struct DisconnectedView: View {
+/// The pad is unreachable. A banner above the sessions rather than a wall in front of
+/// them: the lights are down, the sessions are not.
+struct DeviceDownBanner: View {
     let status: DeviceStatus
     var name: String = "Codex Micro"
     var retry: () -> Void = {}
     var startSetup: () -> Void = {}
 
     var body: some View {
-        VStack(spacing: 9) {
-            ZStack {
-                Circle().fill(Color(RGB(0xD41145)).opacity(0.24))
-                Image(systemName: "exclamationmark.circle")
-                    .font(.system(size: 19))
-                    .foregroundStyle(Color(RGB(0xFF9DB2)))
-            }
-            .frame(width: 38, height: 38)
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: "exclamationmark.circle")
+                .font(.system(size: 14))
+                .foregroundStyle(Color(RGB(0xFF9DB2)))
+                .padding(.top, 1)
 
-            Text(status.headline(name))
-                .font(.system(size: 13.5, weight: .semibold))
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-            // The part that varies, and the only part that says what to do about it —
-            // so it must never be the part that gets cut.
-            //
-            // `maxWidth` alone truncated it. Inside a fixed-width popover SwiftUI
-            // proposes one line's height and Text obeys, so "check that it is on
-            // Layer 1" — the actual fix, and the least guessable thing this app knows
-            // — became an ellipsis. fixedSize makes it claim the height it needs and
-            // wrap instead.
-            Text(status.message)
-                .font(.system(size: 11.5))
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 296)
-                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(status.headline(name))
+                    .font(.system(size: 12, weight: .semibold))
+                // The part that varies, and the only part that says what to do about
+                // it — so it must never be the part that gets cut. fixedSize makes it
+                // claim the height it needs and wrap; maxWidth alone truncated
+                // "check that it is on Layer 1" to an ellipsis.
+                Text(status.message)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
 
             // A permission is not fixed by asking again. Retrying puts the same
             // question to macOS and gets the same answer, so for that case the button
             // has to lead somewhere the answer can change.
-            Button(status.needsSetup ? "Start setup" : "Try again") {
+            Button(status.needsSetup ? "Set up" : "Retry") {
                 if status.needsSetup { startSetup() } else { retry() }
             }
-            .glassButton(prominent: true)
-            .padding(.top, 3)
+            .glassButton()
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 16)
-        .padding(.bottom, 18)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
     }
 }
 
@@ -713,6 +710,7 @@ struct SetupNeededView: View {
     /// board worth trusting yet, and those are very different problems.
     var sessions: Int = 0
     var startSetup: () -> Void = {}
+    var skipSetup: () -> Void = {}
 
     var body: some View {
         VStack(spacing: 9) {
@@ -747,6 +745,14 @@ struct SetupNeededView: View {
             Button("Continue setup") { startSetup() }
                 .glassButton(prominent: true)
                 .padding(.top, 3)
+
+            // The way out of the wall. Skipping is not finishing — the checklist
+            // stays honest — but the sessions the app already found belong to the
+            // user, not to the checklist.
+            Button("Show sessions anyway") { skipSetup() }
+                .buttonStyle(.plain)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 14)
         .padding(.top, 16)

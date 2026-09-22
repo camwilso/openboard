@@ -98,7 +98,10 @@ struct RequiresSetup: ViewModifier {
                 ProgressView()
                     .controlSize(.small)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if setup.isReady {
+            } else if setup.isReady || setup.isSkipped {
+                // Skipped counts: the user has been told the pad will not paint and
+                // chosen to configure anyway. Repeating the wall after that choice
+                // would make skipping a button that does nothing.
                 content
             } else {
                 NotReadyView(progress: setup.progress, purpose: purpose) {

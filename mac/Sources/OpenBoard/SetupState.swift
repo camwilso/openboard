@@ -40,6 +40,20 @@ final class SetupState: ObservableObject {
      */
     @Published private(set) var hasSettled = false
 
+    /**
+     The user chose to use the app without finishing setup.
+
+     Skipping silences the gates — the popover shows sessions, the panes show their
+     controls — without pretending anything is done: the checklist still shows what is
+     missing, and the keys still stay dark until the install can actually paint. The
+     alternative was a wall between the user and six sessions the app had already
+     found, on the say-so of steps they had decided not to take yet.
+
+     Cleared by finishing setup rather than by any UI: once `isReady` is true the flag
+     is never consulted again.
+     */
+    @Published private(set) var isSkipped = false
+
     /// The board, for the calibration step. Weak because the delegate owns both and a
     /// strong reference here would be a cycle for the lifetime of the app.
     private weak var board: BoardModel?
@@ -68,6 +82,18 @@ final class SetupState: ObservableObject {
         FileManager.default.fileExists(atPath: completionMarker.path)
     }
 
+    /// Same shape as the completion marker, for the same reason: a file under
+    /// `OPENBOARD_HOME`, so the onboarding rehearsal starts genuinely fresh.
+    private static var skipMarker: URL {
+        AppPaths.state().appendingPathComponent(".setup-skipped")
+    }
+
+    func skip() {
+        try? Data().write(to: Self.skipMarker)
+        isSkipped = true
+        Log.write("setup: skipped — running without the remaining steps")
+    }
+
     /// Written when the moment has actually been *shown*, not when it is detected.
     /// `refresh()` runs from the popover too, and marking it there would burn the one
     /// occasion on a window nobody had open.
@@ -77,6 +103,7 @@ final class SetupState: ObservableObject {
     }
 
     func refresh() {
+        isSkipped = FileManager.default.fileExists(atPath: Self.skipMarker.path)
         let permissions = PermissionProbe.inspect()
         let hooks = HookInstall.audit(
             settings: HookInstall.loadSettings(),

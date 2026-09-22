@@ -245,6 +245,12 @@ struct SetupSheet: View {
             HStack(spacing: 8) {
                 Button("Check again", action: refresh)
                     .controlSize(.small)
+                if !progress.isReady, !setup.isSkipped {
+                    // Not a step and not a finish — an exit. The checklist survives
+                    // it untouched; only the walls come down.
+                    Button("Skip for now", action: skipAndClose)
+                        .controlSize(.small)
+                }
                 Spacer(minLength: 0)
                 if !progress.isReady {
                     // Offered here because two of the four need it, and hunting for the
@@ -267,6 +273,11 @@ struct SetupSheet: View {
         setup.refresh()
         permissions = PermissionProbe.inspect()
         loginStatus = LoginItem.status
+    }
+
+    private func skipAndClose() {
+        setup.skip()
+        dismiss()
     }
 
     private func openPane(_ pane: String) {
