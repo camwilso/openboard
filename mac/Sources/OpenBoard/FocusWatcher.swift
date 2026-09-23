@@ -211,7 +211,13 @@ final class FocusWatcher {
  */
 enum TerminalTitles {
     static func read() async -> [String: String] {
-        await withCheckedContinuation { continuation in
+        // "tell application" launches the app if it is not running, and this runs on
+        // the presence cycle — so without this guard the board starts Terminal, every
+        // few seconds forever, on a Mac whose owner uses iTerm2 or Warp and has no
+        // Terminal tabs to read. Same guard as `Focus.focusTerminal`; an empty map
+        // means session names fall back to the transcript, which is the correct loss.
+        guard Focus.isRunning(bundleID: "com.apple.Terminal") else { return [:] }
+        return await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .utility).async {
                 let script = """
                 tell application "Terminal"
