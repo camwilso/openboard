@@ -1158,9 +1158,17 @@ final class BoardController: ObservableObject {
 
         // Fail-closed: an unrecognised surface gets no key. Applied here rather than
         // in the helper so the rules live in one place and can be reasoned about.
+        //
+        // `configured:` is what makes the `entrypoints` preference mean anything.
+        // Omitted, `allowedEntrypoints` sees nil and falls back to the built-in
+        // default, so a surface added to config.json was parsed, stored and
+        // serialized — and then silently ignored on the one path that consults the
+        // allowlist. Only the environment override worked, which is the opposite of
+        // the documented precedence (env beats config beats default).
         let verdict = Eligibility.evaluate(
             env: event.environment,
             payload: event.eligibilityPayload,
+            configured: model.preferences.entrypoints,
             harness: event.harness
         )
         guard verdict.eligible, let sessionID = event.sessionID else {
