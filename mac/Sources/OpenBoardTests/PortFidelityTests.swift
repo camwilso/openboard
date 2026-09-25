@@ -126,6 +126,37 @@ test("a session with no id is refused") {
     expect(Eligibility.evaluate(env: cliEnv, payload: Eligibility.Payload()).reason == .noSessionID)
 }
 
+test("a configured surface is honoured, and precedence holds") {
+    // The regression this pins: `entrypoints` was parsed, stored and serialized by
+    // Preferences, and then never reached the allowlist, because the one caller that
+    // consults it omitted `configured:`. The setting existed and did nothing.
+    let configured = ["cli", "claude-vscode", "claude-desktop"]
+    let verdict = Eligibility.evaluate(
+        env: ["CLAUDE_CODE_ENTRYPOINT": "claude-desktop"],
+        payload: payload,
+        configured: configured
+    )
+    expect(verdict.eligible, "a configured surface must get a key")
+
+    // Still fail-closed for anything absent from the configured list.
+    expect(
+        !Eligibility.evaluate(
+            env: ["CLAUDE_CODE_ENTRYPOINT": "cowork"],
+            payload: payload,
+            configured: configured
+        ).eligible
+    )
+
+    // Documented precedence: env beats config beats default.
+    expect(
+        Eligibility.allowedEntrypoints(
+            env: ["OPENBOARD_ENTRYPOINTS": "cli"], configured: configured
+        ) == ["cli"]
+    )
+    expect(Eligibility.allowedEntrypoints(env: [:], configured: configured) == Set(configured))
+    expect(Eligibility.allowedEntrypoints(env: [:], configured: []) == Eligibility.defaultEntrypoints)
+}
+
 test("the environment override wins, but cannot lock everything out") {
     let allowed = Eligibility.allowedEntrypoints(env: ["OPENBOARD_ENTRYPOINTS": "cli,cowork"])
     expect(allowed == ["cli", "cowork"])
