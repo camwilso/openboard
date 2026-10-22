@@ -71,13 +71,41 @@ public struct BoardCell: Identifiable, Sendable {
 public enum BoardLayout {
     public static let slotCount = 6
 
+    /**
+     Which pad is attached. Same board, two bottom rows.
+
+     The Codex Micro puts a double-width cap over `ACT10` and `ACT11`, so the two
+     switches are one key. The Creator Micro 2 — the same hardware with the ChatGPT
+     layer installed — ships three ordinary caps there, so `ACT11` is a key of its own
+     and collapsing it would make two keys do the same thing. Decided from the HID
+     product name when the pad is surveyed; the Codex Micro layout is the default so
+     every existing test and binding reads as before.
+     */
+    public enum Model: String, Sendable {
+        case codexMicro
+        case creatorMicro2
+    }
+
+    nonisolated(unsafe) public static var model: Model = .codexMicro
+
+    /// `Creator Micro 2` is what the pad calls itself over HID; the Codex Micro says
+    /// `Codex Micro`. Anything unknown keeps the Codex layout.
+    public static func model(forProduct product: String?) -> Model {
+        product?.localizedCaseInsensitiveContains("Creator Micro") == true ? .creatorMicro2 : .codexMicro
+    }
+
     /// Reading order, row by row, exactly as the design's `BOARD` array.
     ///
     /// Row 1: dial, two session keys, stick
     /// Row 2: four session keys
     /// Row 3: four action keys
     /// Row 4: touch, the double-width cap, one action key
-    public static let cells: [BoardCell] = [
+    public static var cells: [BoardCell] {
+        model == .creatorMicro2 ? creatorMicro2Cells : codexMicroCells
+    }
+
+    /// The Codex Micro, with its wide cap across `ACT10` and `ACT11`.
+    private static let codexMicroCells: [BoardCell] = [
         BoardCell(id: "ENC", kind: .element(.encoder)),
         BoardCell(id: "AG00", kind: .agent(slot: 1)),
         BoardCell(id: "AG01", kind: .agent(slot: 2)),
@@ -97,6 +125,16 @@ public enum BoardLayout {
         BoardCell(id: "ACT10", kind: .action, span: 2, members: ["ACT10", "ACT11"]),
         BoardCell(id: "ACT12", kind: .action),
     ]
+
+    /// The Creator Micro 2: the same rows, three separate caps along the bottom.
+    private static let creatorMicro2Cells: [BoardCell] =
+        codexMicroCells.flatMap { cell -> [BoardCell] in
+            guard cell.id == "ACT10" else { return [cell] }
+            return [
+                BoardCell(id: "ACT10", kind: .action),
+                BoardCell(id: "ACT11", kind: .action),
+            ]
+        }
 
     public static let agentKeys: [String] = ["AG00", "AG01", "AG02", "AG03", "AG04", "AG05"]
 
@@ -178,6 +216,7 @@ public enum KeyAction: String, CaseIterable, Sendable, Codable {
      the right thing.
      */
     case newtabCmux = "newtab-cmux"
+    case newtabWarp = "newtab-warp"
     case newWorkspaceCmux = "newworkspace-cmux"
     case voiceTap = "voice-tap"
     case voiceTalk = "voice-talk"
@@ -214,6 +253,7 @@ public enum KeyAction: String, CaseIterable, Sendable, Codable {
         case .snippet: "type snippet"
         case .newtab: "new Terminal tab"
         case .newtabCmux: "new cmux tab"
+        case .newtabWarp: "new Warp tab"
         case .newWorkspaceCmux: "new cmux workspace"
         case .voiceTap: "tap to dictate"
         case .voiceTalk: "hold to dictate"
@@ -241,6 +281,7 @@ public enum KeyAction: String, CaseIterable, Sendable, Codable {
         case .reject: "reject pending prompt (⎋) / cancel fun mode"
         case .snippet: "type snippet at cursor"
         case .newtabCmux: "new cmux tab (in the workspace you are in)"
+        case .newtabWarp: "new Warp tab (Warp is raised first, then ⌘T)"
         case .newWorkspaceCmux: "new cmux workspace (cmux's own ⌘N)"
         case .voiceTalk: "hold to dictate (needs voice.mode=hold)"
         case .countdown: "FUN MODE — play the video, lights follow"
