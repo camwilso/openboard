@@ -51,6 +51,39 @@ enum Actions {
     }
 
     /**
+     A new tab in Warp: raise it, then ⌘T — the same shape as the Terminal version.
+
+     Warp has no scripting dictionary, so the raise is done in-process rather than by
+     Apple event. Never launched: a key that starts an app you did not have open is a
+     surprise, and the Terminal version has the same rule.
+     */
+    static func newWarpTab() -> Result {
+        guard let app = WarpFocus.bundleIDs.lazy
+            .compactMap({ NSRunningApplication.runningApplications(withBundleIdentifier: $0).first })
+            .first
+        else { return Result(ok: false, detail: "Warp is not running") }
+        app.activate()
+        // Activation is asynchronous: 150 ms was not enough, and the chord landed in
+        // whatever was in front before. Wait for Warp to actually come forward — up to
+        // a second — and if it still has not, post straight to its process instead of
+        // the HID tap, so nothing else can receive a ⌘T meant for it.
+        let pid = app.processIdentifier
+        let deadline = Date().addingTimeInterval(1.0)
+        while NSWorkspace.shared.frontmostApplication?.processIdentifier != pid, Date() < deadline {
+            usleep(20_000)
+        }
+        let inFront = NSWorkspace.shared.frontmostApplication?.processIdentifier == pid
+        let chord = Shortcut(keyCode: 17, modifiers: [.command], key: "T")
+        for down in [true, false] {
+            guard let event = CGEvent(keyboardEventSource: nil, virtualKey: 17, keyDown: down)
+            else { return Result(ok: false, detail: "could not create a key event") }
+            event.flags = flags(for: chord)
+            if inFront { event.post(tap: .cghidEventTap) } else { event.postToPid(pid) }
+        }
+        return Result(ok: true, detail: inFront ? "" : "sent to Warp's process; it did not come forward")
+    }
+
+    /**
      A new tab in cmux — a surface in the workspace you are in.
 
      Not ⌘T through System Events, which is how the Terminal version works. That keystroke
@@ -166,7 +199,12 @@ enum Actions {
      the same two API calls, minus spawning a process per tick. At a fast turn that is
      several spawns a second, each costing more than the event it sends.
 
-     Positive scrolls up. Posted to the HID tap so it lands wherever a real wheel would.
+     Positive scrolls up. Posted to the HID tap so it lands as a real wheel would —
+     but aimed at the frontmost window rather than the cursor. macOS routes wheel
+     events by cursor position, and after a jump the cursor is still over whatever was
+     in front before, so the dial scrolled the wrong session. The frontmost app's top
+     window is what the user is looking at; when it cannot be found, the cursor
+     position stands.
      */
     @discardableResult
     static func scroll(lines: Int) -> Result {
@@ -181,8 +219,31 @@ enum Actions {
         ) else {
             return Result(ok: false, detail: "could not create a scroll event")
         }
+        if let point = frontmostWindowCentre() { event.location = point }
         event.post(tap: .cghidEventTap)
         return Result(ok: true, detail: "")
+    }
+
+    /// The centre of the frontmost app's topmost on-screen window, in the global
+    /// top-left coordinate space `CGEvent.location` uses. `CGWindowListCopyWindowInfo`
+    /// lists front to back, so the first normal-layer window of that app is its key
+    /// window. Needs no permission: window bounds are public, only contents are not.
+    private static func frontmostWindowCentre() -> CGPoint? {
+        guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier,
+              let windows = CGWindowListCopyWindowInfo(
+                  [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID
+              ) as? [[String: Any]]
+        else { return nil }
+        for window in windows {
+            guard (window[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == pid,
+                  (window[kCGWindowLayer as String] as? NSNumber)?.intValue == 0,
+                  let bounds = window[kCGWindowBounds as String] as? NSDictionary,
+                  let rect = CGRect(dictionaryRepresentation: bounds),
+                  rect.width > 0, rect.height > 0
+            else { continue }
+            return CGPoint(x: rect.midX, y: rect.midY)
+        }
+        return nil
     }
 
     // MARK: - push to talk
