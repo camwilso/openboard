@@ -30,6 +30,7 @@ is on offer:
 | type snippet | send a saved piece of text |
 | new Terminal tab | what it says |
 | new cmux tab | a tab in the cmux workspace you are in — cmux's ⌘T |
+| new Warp tab | a new tab in Warp — raised first, then ⌘T; never launched |
 | new cmux workspace | a whole new cmux workspace — cmux's ⌘N, which cmux itself calls "new tab" |
 | tap to dictate | push-to-talk |
 | fun mode | the party trick, see below |

@@ -65,6 +65,13 @@ enum Focus {
             return focusCmux(slot)
         }
 
+        // Also before the tty branch, for the same reason: a Warp pane has a real tty
+        // that Terminal does not own, so the walk would miss, prompt for Terminal
+        // Automation, and miss again in iTerm2. Warp is addressed by its own link.
+        if slot.origin == .warp {
+            return focusWarp(slot)
+        }
+
         if let tty = slot.surface, tty.hasPrefix("ttys") || tty.hasPrefix("/dev/") {
             let path = tty.hasPrefix("/dev/") ? tty : "/dev/\(tty)"
 
@@ -254,6 +261,32 @@ enum Focus {
         // surface rather than switching workspaces in front of you.
         app.activate()
         return .raised(method: "cmux-surface")
+    }
+
+    /**
+     Warp: exact, by the pane's own link.
+
+     Opening `warp://session/<id>` makes Warp find that pane in every window and tab,
+     raise the window and focus the split — see `WarpFocus`. The link is read from the
+     session's process at press time: one `sysctl`, for a value that cannot change
+     while the pane exists.
+
+     Never launched to look for a session that cannot be in it, like the others. With
+     no link — a Warp older than 0.2026.05.27, or an environment that could not be
+     read — the app is raised, the same approximate jump the integrated-terminal case
+     settles for.
+     */
+    private static func focusWarp(_ slot: SlotView) -> Outcome {
+        guard let app = WarpFocus.bundleIDs.lazy
+            .compactMap({ NSRunningApplication.runningApplications(withBundleIdentifier: $0).first })
+            .first
+        else { return .notFound }
+        if let pid = slot.pid, let link = WarpFocus.url(forPID: pid) {
+            guard NSWorkspace.shared.open(link) else { return .failed("Warp refused \(link)") }
+            return .raised(method: "warp-session-link")
+        }
+        app.activate()
+        return .raised(method: "warp-activate")
     }
 
     /// The `cmux` binary belonging to the copy of cmux that is actually running.

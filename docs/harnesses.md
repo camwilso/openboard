@@ -15,10 +15,11 @@ Fully wired, and the only one tested at length. Every surface:
 | **Terminal** | every state, and pressing a key finds the exact tab by its `tty` |
 | **iTerm2** | every state, and a key finds the exact split — `tty` lives on the session there, one level deeper than Terminal's tabs |
 | **cmux** | every state, and a key selects the exact tab or split by surface id, switching workspace if the session is in another one. Needs no Automation grant |
+| **Warp** | every state, and a key opens the pane's own `warp://session/…` link — the exact tab and split, with no Automation grant. Needs Warp 0.2026.05.27 or newer |
 | **VS Code, extension-hosted** | every state, and a key reveals the panel already holding that conversation |
 | **VS Code, integrated terminal** | every state; a key raises VS Code but cannot select a specific terminal — no API exposes that from outside |
 
-Each of those four apps has a switch in **Settings → Agents → Where it works**. Turning
+Each of those five apps has a switch in **Settings → Agents → Where it works**. Turning
 one off means sessions there get no key — and any key one of them is already holding is
 given up immediately, because six keys is a scarce budget and a surface you have stopped
 caring about should not be spending it. Switched on is the default, including for a

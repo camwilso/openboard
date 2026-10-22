@@ -604,6 +604,9 @@ final class BoardController: ObservableObject {
             let result = Actions.newTerminalTab()
             Log.write(result.ok ? "key \(key): opened a Terminal tab" : "key \(key): \(result.detail)")
 
+        case .newtabWarp:
+            let result = Actions.newWarpTab()
+            Log.write(result.ok ? "key \(key): opened a Warp tab" : "key \(key): \(result.detail)")
         case .newtabCmux:
             let result = Actions.newCmuxTab()
             Log.write(
@@ -1538,6 +1541,11 @@ final class BoardController: ObservableObject {
                 // Which pad, not just whether one is there: the name in the menu bar is
                 // filed under this.
                 self.model.apply(deviceSerial: survey.serial)
+                // Which layout: the Creator Micro 2 has three bottom keys where the
+                // Codex Micro has a wide cap over two switches. See `BoardLayout.Model`.
+                if survey.found {
+                    BoardLayout.model = BoardLayout.model(forProduct: survey.product)
+                }
                 self.lastPresenceLog = Log.changed("device present", last: self.lastPresenceLog, to: "\(present) (matched \(survey.matched), vendor \(survey.vendorInterfaces), transport \(survey.transport ?? "none"))"
                 )
                 let changed = present != wasPresent
