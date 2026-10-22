@@ -173,7 +173,7 @@ func runSurfaceListeningTests() {
 
     test("every surface that names a host is listed, and offers a switch") {
         let hosted = OpenBoardKit.Harness.claudeCode.surfaces.compactMap(\.host)
-        expectEqual(Set(hosted), Set([.terminal, .iterm2, .cmux, .vscode]))
+        expectEqual(Set(hosted), Set([.terminal, .iterm2, .cmux, .vscode, .warp]))
         // And the rows that describe a rule rather than an app offer none: a switch
         // there would be a control that does nothing.
         for surface in OpenBoardKit.Harness.claudeCode.surfaces where surface.unsupported != nil {

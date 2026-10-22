@@ -262,6 +262,7 @@ public enum SessionOrigin: String, Sendable, Equatable {
     /// Lower-cased because that is how cmux writes its own name, and a badge that
     /// renames someone's app is a small wrongness the reader has to look past.
     case cmux = "cmux"
+    case warp = "Warp"
     case cli = "CLI"
 
     /// Decided from the entrypoint, then from which application actually owns the
@@ -286,6 +287,9 @@ public enum SessionOrigin: String, Sendable, Equatable {
         // Terminal does not own that pty. The same failure VS Code's integrated
         // terminal used to have, and the reason `host` exists at all.
         case .cmux: return .cmux
+        // Same shape as cmux: a real tty that Terminal does not own. Without this a
+        // Warp session would take the Terminal jump and find nothing.
+        case .warp: return .warp
         case .unknown: return tty != nil ? .terminal : .cli
         }
     }

@@ -183,6 +183,16 @@ extension Harness {
                 host: .cmux
             ),
             Surface(
+                id: "warp",
+                name: "Warp",
+                detection: "The owning process: a path through Warp.app.",
+                jump: "Opens the pane's own `warp://session/…` link, read from the "
+                    + "session's environment — the exact tab and split, with no "
+                    + "Automation grant. Needs Warp 0.2026.05.27 or newer; an older "
+                    + "one just raises the app.",
+                host: .warp
+            ),
+            Surface(
                 id: "vscode",
                 name: "VS Code",
                 detection: "Entry point `claude-vscode`, or the owning process when a "

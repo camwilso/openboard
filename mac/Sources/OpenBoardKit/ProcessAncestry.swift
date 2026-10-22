@@ -31,6 +31,11 @@ public enum ProcessAncestry {
         /// A cmux surface — a tab or split in the cmux terminal. Reached through cmux's
         /// own socket rather than by tty; see `Cmux`.
         case cmux
+        /// Warp. No AppleScript dictionary and tabs that no tty walk can select — but
+        /// every pane exports a `warp://session/<id>` link in its environment (Warp
+        /// 0.2026.05.27 and newer) that raises exactly that tab and split. Read from
+        /// the session's own process at jump time; see `WarpFocus`.
+        case warp
         case unknown
     }
 
@@ -52,6 +57,12 @@ public enum ProcessAncestry {
         // somewhere else entirely is not evidence of anything; a path *through the
         // bundle* is, whichever binary inside it is running.
         ("cmux.app", .cmux),
+        // Warp draws its own UI and has no scripting, so the path through the bundle
+        // is the only evidence a session is hosted there. Each release channel ships
+        // as its own bundle.
+        ("Warp.app", .warp),
+        ("WarpPreview.app", .warp),
+        ("WarpDev.app", .warp),
     ]
 
     /// Walk up from a process until one of the known hosts is recognised.
