@@ -121,6 +121,21 @@ func runFocusITerm2Tests() {
         expect(actions.contains("current session of current window"))
     }
 
+    test("TerminalTitles.read refuses to launch Terminal when it is not running") {
+        // It runs on the presence cycle, so an unguarded `tell application "Terminal"`
+        // relaunched Terminal a few seconds after every quit.
+        let watcher = read("FocusWatcher")
+        guard let start = watcher.range(of: "enum TerminalTitles") else {
+            expect(false, "TerminalTitles not found in FocusWatcher.swift"); return
+        }
+        let body = watcher[start.upperBound...]
+        guard let guardAt = body.range(of: "Focus.isRunning(bundleID: \"com.apple.Terminal\")"),
+              let tellAt = body.range(of: "tell application \"Terminal\"") else {
+            expect(false, "TerminalTitles.read must check Terminal is running before telling it"); return
+        }
+        expect(guardAt.lowerBound < tellAt.lowerBound, "the running check must come before the Apple Event")
+    }
+
     test("hasLanded guards both Terminal and iTerm2 checks on the app already running") {
         // Without this, polling hasLanded during confirmFrontmost's retry loop can
         // launch Terminal for an iTerm2-only user, or vice versa — up to ~19 times

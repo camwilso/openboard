@@ -211,7 +211,10 @@ final class FocusWatcher {
  */
 enum TerminalTitles {
     static func read() async -> [String: String] {
-        await withCheckedContinuation { continuation in
+        // An Apple Event to Terminal launches it when it is not running, so polling this
+        // on the presence cycle reopened Terminal seconds after every quit.
+        guard Focus.isRunning(bundleID: "com.apple.Terminal") else { return [:] }
+        return await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .utility).async {
                 let script = """
                 tell application "Terminal"
